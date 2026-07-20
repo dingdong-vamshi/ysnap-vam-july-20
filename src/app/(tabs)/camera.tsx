@@ -22,16 +22,17 @@ import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions, FlashMode } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useAudioPlayer } from 'expo-audio';
 import Svg, { Circle, Rect } from 'react-native-svg';
 
 import { colors, spacing, typography } from '../../constants';
 import { callEdgeFunction, supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getLanguageName } from '../../constants/languages';
+import { elevenLabsService } from '../../services/elevenLabs';
+import { useTranslationAudioPlayback } from '../../hooks/useTranslationAudioPlayback';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -76,7 +77,7 @@ interface PastScanSession {
 export default function CameraScreen() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const navigation = useNavigation();
+  const router = useRouter();
 
   // Camera permissions
   const [permission, requestPermission] = useCameraPermissions();
@@ -205,7 +206,7 @@ export default function CameraScreen() {
   }, [isProcessing]);
 
   // Audio player for voice output
-  const player = useAudioPlayer();
+  const translationAudio = useTranslationAudioPlayback();
 
   // active profile settings
   const { data: profile } = useQuery<any>({
@@ -216,6 +217,19 @@ export default function CameraScreen() {
         .from('profiles')
         .select('primary_target_language')
         .eq('id', user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+  const { data: preferences } = useQuery<any>({
+    queryKey: ['preferences', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('selected_voice_id')
+        .eq('user_id', user.id)
         .single();
       return data;
     },
@@ -292,13 +306,28 @@ export default function CameraScreen() {
     setFlash((current) => (current === 'off' ? 'on' : 'off'));
   };
 
+  const ensureSignedIn = async () => {
+    if (user) return true;
+    Alert.alert(
+      'Sign In Required',
+      'Sign in to use camera translation.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in') },
+      ],
+    );
+    return false;
+  };
+
   // Run image processing via Edge Function calling OpenRouter
   const processImage = async (uri: string, mimeType = 'image/jpeg') => {
-    if (!user) {
+    if (!(await ensureSignedIn())) {
       setIsProcessing(false);
-      Alert.alert('Sign In Required', 'Sign in to use camera translation.');
       return;
     }
+    await translationAudio.reset();
+    void translationAudio.stop();
+    translationAudio.unlockOnUserGesture();
     setCapturedImage(uri);
     setIsProcessing(true);
     try {
@@ -319,7 +348,7 @@ export default function CameraScreen() {
       const food = data.food_info;
       const menu = data.menu_info;
 
-      setAnalysisResult({
+      const resultPayload = {
         originalText: data.ocr_text || food?.name || data.analysis || 'No text detected',
         translatedText: data.translated_text || food?.translated_name || data.analysis || '',
         analysis: data.analysis || '',
@@ -351,7 +380,24 @@ export default function CameraScreen() {
         menuInfo: menu ? {
           dishes: Array.isArray(menu.dishes) ? menu.dishes : []
         } : undefined,
-      });
+      };
+
+      setAnalysisResult(resultPayload);
+
+      if (resultPayload.translatedText) {
+        try {
+          const ttsResult = await elevenLabsService.generateSpeech(
+            resultPayload.translatedText,
+            preferences?.selected_voice_id || '21m00Tcm4TlvDq8ikWAM',
+            true
+          );
+          if (ttsResult.url) {
+            await translationAudio.play(ttsResult.url);
+          }
+        } catch (ttsErr) {
+          console.error('Camera TTS generation failed:', ttsErr);
+        }
+      }
 
       refetchPastScans();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -368,6 +414,8 @@ export default function CameraScreen() {
     if (!cameraRef.current || isProcessing) return;
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      translationAudio.unlockOnUserGesture();
+      void translationAudio.stop();
       setIsProcessing(true);
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.85,
@@ -382,6 +430,8 @@ export default function CameraScreen() {
   };
 
   const handlePickImage = async () => {
+    translationAudio.unlockOnUserGesture();
+    void translationAudio.stop();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -398,6 +448,7 @@ export default function CameraScreen() {
   };
 
   const handleLoadPastScan = (scan: PastScanSession) => {
+    void translationAudio.stop();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setCapturedImage(null);
     setShowHistory(false);
@@ -446,9 +497,73 @@ export default function CameraScreen() {
     setCapturedImage(null);
     setAnalysisResult(null);
     setIsProcessing(false);
-    try {
-      player.pause();
-    } catch (e) {}
+    void translationAudio.stop();
+  };
+
+  const translationStatusLabel = translationAudio.state === 'playing'
+    ? 'Playing'
+    : translationAudio.state === 'paused'
+      ? 'Paused'
+      : translationAudio.state === 'completed'
+        ? 'Completed'
+        : translationAudio.state === 'failed'
+          ? 'Playback failed'
+          : translationAudio.state === 'generating'
+            ? 'Preparing audio'
+            : translationAudio.state === 'ready'
+              ? 'Ready'
+              : 'Idle';
+
+  const renderTranslatedAudioControls = () => {
+    if (!analysisResult?.translatedText) return null;
+
+    return (
+      <View style={styles.translationPlaybackCard}>
+        <Text style={styles.textBlockTitle}>TRANSLATED VOICE</Text>
+        <View style={styles.translationPlaybackControls}>
+          <TouchableOpacity
+            style={styles.translationControlBtn}
+            onPress={() => {
+              void translationAudio.toggle();
+            }}
+            disabled={translationAudio.state === 'generating'}
+          >
+            <Ionicons
+              name={translationAudio.state === 'playing' ? 'pause' : 'play'}
+              size={20}
+              color={colors.accentBlue}
+            />
+            <Text style={styles.translationControlText}>
+              {translationAudio.state === 'playing' ? 'Pause' : 'Play'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.translationControlBtn}
+            onPress={() => {
+              void translationAudio.replay();
+            }}
+            disabled={translationAudio.state === 'generating'}
+          >
+            <Ionicons name="reload" size={20} color={colors.accentBlue} />
+            <Text style={styles.translationControlText}>Replay</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.translationStatusText}>{translationStatusLabel}</Text>
+
+        {translationAudio.pendingTapToPlay ? (
+          <TouchableOpacity
+            style={styles.tapToPlayButton}
+            onPress={() => {
+              void translationAudio.play();
+            }}
+          >
+            <Text style={styles.tapToPlayText}>Tap to play translation</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
   };
 
   const handleCopyText = (copyVal: string) => {
@@ -1417,6 +1532,8 @@ export default function CameraScreen() {
                 </View>
               )}
 
+              {renderTranslatedAudioControls()}
+
               {/* AI Chat Assistant bubble */}
               <AIChatAssistantBubble text={analysisResult.analysis} />
 
@@ -1716,7 +1833,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   resultsSheetContent: {
-    paddingBottom: 60,
+    paddingBottom: spacing.md,
   },
   resultsHeader: {
     flexDirection: 'row',
@@ -1864,6 +1981,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.accentBlue,
     marginLeft: 6,
+  },
+  translationPlaybackCard: {
+    marginTop: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    padding: spacing.md,
+    gap: 8,
+  },
+  translationPlaybackControls: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'center',
+  },
+  translationControlBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 36,
+    backgroundColor: 'rgba(92, 107, 192, 0.08)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(92, 107, 192, 0.2)',
+  },
+  translationControlText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.accentBlue,
+  },
+  translationStatusText: {
+    fontSize: 11,
+    color: 'rgba(0,0,0,0.55)',
+    fontWeight: '600',
+  },
+  tapToPlayButton: {
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  tapToPlayText: {
+    fontSize: 12,
+    color: colors.accentBlue,
+    fontWeight: '600',
   },
   statsBanner: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Platform,
+  PanResponder,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -24,11 +25,43 @@ import { typography } from '../constants/typography';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { elevenLabsService } from '../services/elevenLabs';
+import {
+  DEFAULT_PLAYBACK_SPEED,
+  PLAYBACK_SPEED_MAX,
+  PLAYBACK_SPEED_MIN,
+  PLAYBACK_SPEED_STEP,
+  getGlobalPlaybackSpeed,
+  normalizePlaybackSpeed,
+  setGlobalPlaybackSpeed,
+} from '../lib/playbackSpeed';
+
+const WEB_SPEED_RANGE_INPUT_STYLE = {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+  width: '100%',
+  height: '100%',
+  opacity: 0,
+  cursor: 'pointer',
+  appearance: 'none',
+  background: 'transparent',
+  margin: 0,
+  padding: 0,
+};
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => getGlobalPlaybackSpeed());
+  const [sliderTrackWidth, setSliderTrackWidth] = useState(0);
+  const latestPlaybackSpeedRef = useRef(playbackSpeed);
+
+  useEffect(() => {
+    latestPlaybackSpeedRef.current = playbackSpeed;
+  }, [playbackSpeed]);
 
   // Fetch Daily Nutrition Goals
   const { data: dailyGoals } = useQuery({
@@ -141,10 +174,64 @@ export default function SettingsScreen() {
     updatePreferenceMutation.mutate({ [key]: !currentValue });
   };
 
-  const handleSetSpeed = (speed: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    updatePreferenceMutation.mutate({ playback_speed: speed });
+  useEffect(() => {
+    if (preferences?.playback_speed == null) {
+      setPlaybackSpeed(getGlobalPlaybackSpeed());
+      return;
+    }
+
+    const syncedSpeed = setGlobalPlaybackSpeed(Number(preferences.playback_speed));
+    setPlaybackSpeed(syncedSpeed);
+  }, [preferences?.playback_speed]);
+
+  const handleSetSpeed = (speed: number, saveRemote = true) => {
+    const nextSpeed = setGlobalPlaybackSpeed(speed);
+    latestPlaybackSpeedRef.current = nextSpeed;
+    setPlaybackSpeed(nextSpeed);
+    if (saveRemote) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      updatePreferenceMutation.mutate({ playback_speed: nextSpeed });
+    }
   };
+
+  const speedTicks = useMemo(() => {
+    const count = Math.round((PLAYBACK_SPEED_MAX - PLAYBACK_SPEED_MIN) / PLAYBACK_SPEED_STEP) + 1;
+    return Array.from({ length: count }, (_, index) => normalizePlaybackSpeed(PLAYBACK_SPEED_MIN + index * PLAYBACK_SPEED_STEP));
+  }, []);
+
+  const playbackSpeedPercent = ((playbackSpeed - PLAYBACK_SPEED_MIN) / (PLAYBACK_SPEED_MAX - PLAYBACK_SPEED_MIN)) * 100;
+
+  const updateSpeedFromLocation = (locationX: number, saveRemote = false) => {
+    if (!sliderTrackWidth) return;
+    const ratio = Math.min(1, Math.max(0, locationX / sliderTrackWidth));
+    const nextSpeed = PLAYBACK_SPEED_MIN + ratio * (PLAYBACK_SPEED_MAX - PLAYBACK_SPEED_MIN);
+    handleSetSpeed(nextSpeed, saveRemote);
+  };
+
+  const handleWebSpeedChange = (event: any) => {
+    handleSetSpeed(Number(event.currentTarget.value), false);
+  };
+
+  const handleWebSpeedCommit = () => {
+    handleSetSpeed(latestPlaybackSpeedRef.current, true);
+  };
+
+  const speedSliderResponder = useMemo(
+    () => PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (event) => {
+        updateSpeedFromLocation(event.nativeEvent.locationX);
+      },
+      onPanResponderMove: (event) => {
+        updateSpeedFromLocation(event.nativeEvent.locationX);
+      },
+      onPanResponderRelease: () => {
+        handleSetSpeed(latestPlaybackSpeedRef.current, true);
+      },
+    }),
+    [sliderTrackWidth]
+  );
 
   const handleSetTheme = (theme: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -245,21 +332,50 @@ export default function SettingsScreen() {
           <View style={styles.settingCard}>
             <Text style={styles.settingLabel}>Playback Speed multiplier</Text>
             <Text style={styles.settingDesc}>Controls speed of TTS voices.</Text>
-            <View style={styles.speedRow}>
-              {[0.75, 1.0, 1.25, 1.5, 2.0].map((speed) => {
-                const isSelected = preferences?.playback_speed === speed;
-                return (
-                  <Pressable
-                    key={speed}
-                    style={[styles.speedBtn, isSelected && styles.speedBtnActive]}
-                    onPress={() => handleSetSpeed(speed)}
-                  >
-                    <Text style={[styles.speedBtnText, isSelected && styles.speedBtnTextActive]}>
-                      {speed}x
-                    </Text>
-                  </Pressable>
-                );
-              })}
+            <View style={styles.speedSliderValueWrap}>
+              <Text style={styles.speedSliderValue}>{playbackSpeed.toFixed(1)}x</Text>
+            </View>
+            <View style={styles.speedSliderOuter}>
+              <View
+                style={styles.speedSliderTrackWrap}
+                onLayout={(event) => setSliderTrackWidth(event.nativeEvent.layout.width)}
+                {...(Platform.OS === 'web' ? {} : speedSliderResponder.panHandlers)}
+              >
+                <View style={styles.speedSliderTrack}>
+                  <View style={[styles.speedSliderFill, { width: `${playbackSpeedPercent}%` }]} />
+                  <View style={styles.speedTickRow} pointerEvents="none">
+                    {speedTicks.map((tick) => (
+                      <View
+                        key={tick}
+                        style={[
+                          styles.speedTick,
+                          tick <= playbackSpeed && styles.speedTickActive,
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <View style={[styles.speedSliderThumb, { left: `${playbackSpeedPercent}%` }]} />
+                </View>
+                {Platform.OS === 'web' ? React.createElement('input' as any, {
+                  type: 'range',
+                  min: PLAYBACK_SPEED_MIN,
+                  max: PLAYBACK_SPEED_MAX,
+                  step: PLAYBACK_SPEED_STEP,
+                  value: playbackSpeed,
+                  'aria-label': 'Playback speed',
+                  onChange: handleWebSpeedChange,
+                  onMouseUp: handleWebSpeedCommit,
+                  onTouchEnd: handleWebSpeedCommit,
+                  onKeyUp: handleWebSpeedCommit,
+                  onBlur: handleWebSpeedCommit,
+                  style: WEB_SPEED_RANGE_INPUT_STYLE as any,
+                }) : null}
+              </View>
+              <View style={styles.speedRangeLabels}>
+                <Text style={styles.speedRangeLabel}>{PLAYBACK_SPEED_MIN.toFixed(1)}x</Text>
+                <Text style={styles.speedRangeLabel}>{DEFAULT_PLAYBACK_SPEED.toFixed(1)}x</Text>
+                <Text style={styles.speedRangeLabel}>{PLAYBACK_SPEED_MAX.toFixed(1)}x</Text>
+              </View>
             </View>
           </View>
 
@@ -497,11 +613,11 @@ export default function SettingsScreen() {
                 if (Platform.OS === 'web' && typeof sessionStorage !== 'undefined') {
                   sessionStorage.removeItem('ysnap-demo');
                 }
-                router.replace('/(auth)/welcome');
+                router.replace('/(auth)/onboarding');
               } else {
                 await supabase.auth.signOut();
                 queryClient.invalidateQueries({ queryKey: ['profile'] });
-                router.replace('/(auth)/welcome');
+                router.replace('/(auth)/onboarding');
               }
             }}
           >
@@ -588,33 +704,88 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 16,
   },
-  speedRow: {
+  speedSliderValueWrap: {
+    alignItems: 'center',
+    marginTop: 18,
+    marginBottom: 14,
+  },
+  speedSliderValue: {
+    color: colors.accentPurple,
+    backgroundColor: 'rgba(124, 108, 208, 0.08)',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    fontSize: 22,
+    fontWeight: '700',
+    fontFamily: typography.heading3.fontFamily,
+  },
+  speedSliderOuter: {
+    paddingHorizontal: 6,
+  },
+  speedSliderTrackWrap: {
+    minHeight: 48,
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  speedSliderTrack: {
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  speedSliderFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 999,
+    backgroundColor: colors.accentPurple,
+  },
+  speedTickRow: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  speedTick: {
+    width: 2,
+    height: 8,
+    borderRadius: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.18)',
+  },
+  speedTickActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.55)',
+  },
+  speedSliderThumb: {
+    position: 'absolute',
+    top: -10,
+    width: 32,
+    height: 32,
+    marginLeft: -16,
+    borderRadius: 16,
+    backgroundColor: colors.accentPurple,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  speedRangeLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
-  },
-  speedBtn: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: 10,
-    paddingVertical: 10,
     alignItems: 'center',
-    marginHorizontal: 3,
-    ...shadows.sm,
+    marginTop: 8,
   },
-  speedBtnActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  speedBtnText: {
+  speedRangeLabel: {
     ...typography.captionMedium,
-    color: colors.textSecondary,
-  },
-  speedBtnTextActive: {
-    color: colors.textInverse,
-    fontWeight: '700',
+    color: colors.textMuted,
   },
   settingItem: {
     flexDirection: 'row',

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, Pressable, ScrollView, ActivityIndicator, Alert, TextInput, Modal } from 'react-native';
+import { StyleSheet, Text, View, Pressable, ScrollView, ActivityIndicator, Alert, TextInput, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -11,12 +11,14 @@ import { colors } from '../constants/colors';
 import { typography } from '../constants/typography';
 import { getLanguageByCode, languages } from '../constants/languages';
 import { Ionicons } from '@expo/vector-icons';
-import { AudioModule, useAudioPlayer, useAudioPlayerStatus, RecordingPresets } from 'expo-audio';
+import { AudioModule } from 'expo-audio';
 import { useAppAudioRecorder, useAppAudioRecorderState } from '../utils/audioRecorder';
 import { MotionScreen } from '../components/MotionScreen';
 import { elevenLabsService } from '../services/elevenLabs';
 import { callEdgeFunction } from '../lib/supabase';
 import { ReactiveVoiceOrb } from '../components';
+import { useTranslationAudioPlayback } from '../hooks/useTranslationAudioPlayback';
+import { setGlobalPlaybackSpeed } from '../lib/playbackSpeed';
 
 const getWordCount = (text: string): number => {
   if (!text || text.trim() === '') return 0;
@@ -114,14 +116,10 @@ export default function VoiceTranslationScreen() {
   const [selectedSourceLanguage, setSelectedSourceLanguage] = useState<string | null>(null);
   const [selectedTargetLanguage, setSelectedTargetLanguage] = useState<string | null>(null);
   const [languagePicker, setLanguagePicker] = useState<'source' | 'target' | null>(null);
+  const translationAudio = useTranslationAudioPlayback();
 
   // Audio Playback states
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [playbackProgress, setPlaybackProgress] = useState(0); // 0 to 100
   const [outputAudioUrl, setOutputAudioUrl] = useState<string | null>(null);
-  const player = useAudioPlayer(outputAudioUrl || '');
-  const status = useAudioPlayerStatus(player);
   const [progressPercentage, setProgressPercentage] = useState<number | null>(null);
   const [playingHistoryId, setPlayingHistoryId] = useState<string | null>(null);
 
@@ -144,7 +142,6 @@ export default function VoiceTranslationScreen() {
 
   const timerRef = useRef<any>(null);
   const waveRef = useRef<any>(null);
-  const playbackRef = useRef<any>(null);
 
   // Fetch languages
   const { data: profile } = useQuery<any>({
@@ -176,18 +173,32 @@ export default function VoiceTranslationScreen() {
   const isBusy = isRecording || statusText === 'Processing audio...' ||
     statusText === 'Transcribing and translating...' || statusText === 'Re-translating...' ||
     statusText === 'Generating voice...';
+  const playbackProgress = Math.round(translationAudio.progress * 100);
+  const isPlaying = translationAudio.state === 'playing';
+  const playbackSpeed = translationAudio.playbackRate;
 
   const resetTranslationResult = () => {
-    player.pause();
-    setIsPlaying(false);
+    void translationAudio.stop();
     setOutputAudioUrl(null);
-    setPlaybackProgress(0);
     setTranscription('');
     setTranslation('');
     setEditedText('');
     setSessionId(null);
     setTranslationItemId(null);
     setStatusText('Ready to record');
+  };
+
+  const ensureSignedIn = async () => {
+    if (user) return true;
+    Alert.alert(
+      'Sign In Required',
+      'Sign in to use translation features.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in') },
+      ],
+    );
+    return false;
   };
 
   const chooseLanguage = (code: string) => {
@@ -235,46 +246,17 @@ export default function VoiceTranslationScreen() {
     };
   }, [isRecording]);
 
-  // Sync timeline progress with real audio duration
   useEffect(() => {
-    let progressTimer: any;
-    if (isPlaying && status.duration > 0) {
-      progressTimer = setInterval(() => {
-        const currentProgress = (status.currentTime / status.duration) * 100;
-        setPlaybackProgress(Math.min(100, currentProgress));
-      }, 50);
-    }
-    return () => clearInterval(progressTimer);
-  }, [isPlaying, status.currentTime, status.duration]);
-
-  // Handle playback completion
-  useEffect(() => {
-    const isFinished = status.duration > 0 
-      ? status.currentTime >= status.duration - 0.2 
-      : false;
-
-    if (isPlaying && !status.playing && (isFinished || isNaN(status.duration) || status.duration === 0)) {
-      setIsPlaying(false);
+    if (translationAudio.state === 'completed') {
       setPlayingHistoryId(null);
-      setPlaybackProgress(100);
-      setTimeout(() => setPlaybackProgress(0), 200);
       setStatusText('Translation ready');
     }
-  }, [status.playing, status.currentTime, status.duration]);
-
-  // Sync playback speed
-  useEffect(() => {
-    try {
-      if (player) {
-        player.playbackRate = playbackSpeed;
-      }
-    } catch (e) {
-      console.warn("Failed to set playbackRate:", e);
-    }
-  }, [playbackSpeed, player]);
+  }, [translationAudio.state]);
 
   const handleStartRecording = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    translationAudio.unlockOnUserGesture();
+    await translationAudio.reset();
     
     if (!user) {
       Alert.alert(
@@ -312,7 +294,13 @@ export default function VoiceTranslationScreen() {
 
   const handleStopRecording = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await translationAudio.stop();
     setIsRecording(false);
+    if (!(await ensureSignedIn())) {
+      setStatusText('Sign in required');
+      setProgressPercentage(null);
+      return;
+    }
     setStatusText('Processing audio...');
     setProgressPercentage(10); // Start progress bar
 
@@ -336,6 +324,7 @@ export default function VoiceTranslationScreen() {
       // One authenticated server call handles STT, translation, cloned/preset TTS,
       // private audio storage, and the history records as one logical turn.
       setStatusText('Transcribing and translating...');
+      await translationAudio.reset();
       const result = await elevenLabsService.translateVoice(audioUri, {
         sourceLanguage: nativeCode,
         targetLanguage: targetCode,
@@ -357,10 +346,7 @@ export default function VoiceTranslationScreen() {
 
       if (result.generated_audio_url) {
         setOutputAudioUrl(result.generated_audio_url);
-        player.replace({ uri: result.generated_audio_url });
-        player.play();
-        setIsPlaying(true);
-        setPlaybackProgress(0);
+        await translationAudio.play(result.generated_audio_url);
         setStatusText('Translation ready');
       } else {
         throw new Error('Failed to generate speech output.');
@@ -375,7 +361,11 @@ export default function VoiceTranslationScreen() {
       setProgressPercentage(null);
       console.error(e);
       setStatusText('Error occurred');
-      Alert.alert('Translation Error', e.message || 'An unexpected error occurred during translation.');
+      if (e instanceof Error && e.message.includes('Sign in')) {
+        void ensureSignedIn();
+      } else {
+        Alert.alert('Translation Error', e.message || 'An unexpected error occurred during translation.');
+      }
     }
   };
 
@@ -384,17 +374,16 @@ export default function VoiceTranslationScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       if (playingHistoryId === item.id) {
         if (isPlaying) {
-          player.pause();
-          setIsPlaying(false);
+          void translationAudio.toggle();
         } else {
-          player.play();
-          setIsPlaying(true);
+          if (item.signed_url) {
+            await translationAudio.play(item.signed_url);
+          }
         }
         return;
       }
 
       setPlayingHistoryId(item.id);
-      setIsPlaying(true);
 
       let url = item.signed_url;
       if (!url) {
@@ -408,10 +397,8 @@ export default function VoiceTranslationScreen() {
         item.signed_url = url;
       }
 
-      player.replace({ uri: url });
-      player.play();
+      await translationAudio.play(url);
     } catch (err: any) {
-      setIsPlaying(false);
       setPlayingHistoryId(null);
       Alert.alert('Playback Error', err.message || 'Failed to play translation.');
     }
@@ -433,6 +420,7 @@ export default function VoiceTranslationScreen() {
 
   const loadHistoryItem = (item: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void translationAudio.stop();
     setTranscription(item.source_text);
     setEditedText(item.source_text);
     setTranslation(item.translated_text);
@@ -445,16 +433,18 @@ export default function VoiceTranslationScreen() {
 
   const handleTogglePlayback = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (isPlaying) {
-      player.pause();
-      setIsPlaying(false);
+    if (translationAudio.state === 'playing') {
+      await translationAudio.toggle();
       return;
     }
 
     if (!translation) return;
+    if (translationAudio.pendingTapToPlay) {
+      await translationAudio.play();
+      return;
+    }
 
     try {
-      setIsPlaying(true);
       let audioUrl = outputAudioUrl;
       if (!audioUrl) {
         setStatusText('Generating pronunciation...');
@@ -468,28 +458,35 @@ export default function VoiceTranslationScreen() {
         }
       }
       setStatusText('Playing pronunciation...');
-      player.replace({ uri: audioUrl });
-      player.play();
+      await translationAudio.play(audioUrl);
     } catch (err: any) {
       console.error(err);
       Alert.alert('TTS Playback Failed', err.message || 'Error occurred while calling Edge Function.');
-      setIsPlaying(false);
       setStatusText('Translation ready');
     }
   };
 
   const cycleSpeed = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const speeds = [0.8, 1.0, 1.2, 1.5];
-    const nextIdx = (speeds.indexOf(playbackSpeed) + 1) % speeds.length;
-    setPlaybackSpeed(speeds[nextIdx]);
+    const speeds = [0.5, 1.0, 1.5, 2.0];
+    const nextIdx = speeds.findIndex((speed) => speed > playbackSpeed);
+    if (nextIdx === -1) {
+      setGlobalPlaybackSpeed(speeds[0]);
+      return;
+    }
+    setGlobalPlaybackSpeed(speeds[nextIdx]);
   };
 
   const saveEditedTranscript = async () => {
+    if (!(await ensureSignedIn())) {
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setTranscription(editedText);
     setIsEditingTranscript(false);
     setStatusText('Re-translating...');
+    await translationAudio.reset();
 
     try {
       const { data: translationResult, error: transError } = await callEdgeFunction<{
@@ -519,10 +516,7 @@ export default function VoiceTranslationScreen() {
       );
       if (ttsResult && ttsResult.url) {
         setOutputAudioUrl(ttsResult.url);
-        player.replace({ uri: ttsResult.url });
-        player.play();
-        setIsPlaying(true);
-        setPlaybackProgress(0);
+        await translationAudio.play(ttsResult.url);
         setStatusText('Translation ready');
       } else {
         throw new Error('Failed to generate speech output.');
@@ -706,6 +700,21 @@ export default function VoiceTranslationScreen() {
               {/* Playback Controls widget */}
               {translation !== '' && (
                 <View style={styles.playbackContainer}>
+                  <Text style={styles.playbackStateText}>
+                    {translationAudio.state === 'ready'
+                      ? 'Ready'
+                      : translationAudio.state === 'playing'
+                        ? 'Playing'
+                        : translationAudio.state === 'paused'
+                          ? 'Paused'
+                          : translationAudio.state === 'completed'
+                            ? 'Completed'
+                            : translationAudio.state === 'generating'
+                              ? 'Preparing'
+                              : translationAudio.state === 'failed'
+                                ? 'Playback failed'
+                                : 'Loading'}
+                  </Text>
                   {/* Play scrubber */}
                   <View style={styles.scrubberRow}>
                     <Pressable style={styles.playButton} onPress={handleTogglePlayback}>
@@ -724,6 +733,14 @@ export default function VoiceTranslationScreen() {
                       <Text style={styles.speedText}>{playbackSpeed.toFixed(1)}x</Text>
                     </Pressable>
                   </View>
+                  {translationAudio.pendingTapToPlay ? (
+                    <Pressable
+                      style={styles.tapToPlayBtn}
+                      onPress={() => void translationAudio.play()}
+                    >
+                      <Text style={styles.tapToPlayText}>Tap to play translation</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               )}
             </View>
@@ -1099,6 +1116,12 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(9, 9, 9, 0.05)',
     paddingTop: 16,
   },
+  playbackStateText: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginBottom: 10,
+    fontFamily: typography.captionMedium.fontFamily,
+  },
   scrubberRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1137,6 +1160,20 @@ const styles = StyleSheet.create({
     fontFamily: typography.tabular.fontFamily,
     fontWeight: '700',
     color: colors.textPrimary,
+  },
+  tapToPlayBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(123, 97, 255, 0.14)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  tapToPlayText: {
+    color: colors.accentPurple,
+    fontSize: 11,
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,

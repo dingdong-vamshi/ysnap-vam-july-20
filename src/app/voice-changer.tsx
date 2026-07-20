@@ -26,6 +26,7 @@ import { typography } from '../constants/typography';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { elevenLabsService } from '../services/elevenLabs';
+import { useGlobalPlaybackSpeed } from '../hooks/useGlobalPlaybackSpeed';
 
 interface VoiceOption {
   id: string;
@@ -66,6 +67,7 @@ export default function VoiceChangerScreen() {
   const recorder = useAppAudioRecorder();
   const player = useAudioPlayer(outputAudioUrl || '');
   const status = useAudioPlayerStatus(player);
+  const playbackSpeed = useGlobalPlaybackSpeed();
 
   // Fetch cloned voice profiles
   const { data: clonedVoices = [] } = useQuery<any[]>({
@@ -105,6 +107,10 @@ export default function VoiceChangerScreen() {
       if (recordIntervalRef.current) clearInterval(recordIntervalRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    player.playbackRate = playbackSpeed;
+  }, [player, playbackSpeed]);
 
   useEffect(() => {
     const isFinished = status.duration > 0 
@@ -229,6 +235,7 @@ export default function VoiceChangerScreen() {
     } else {
       if (outputAudioUrl) {
         player.replace({ uri: outputAudioUrl });
+        player.playbackRate = playbackSpeed;
         player.play();
         setIsPlayingOutput(true);
       }

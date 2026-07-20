@@ -129,7 +129,7 @@ export default function OnboardingLanguagesScreen() {
       <OnboardingProgressHeader
         currentStep={0}
         totalSteps={2}
-        onBack={() => router.replace('/(auth)/welcome')}
+        onBack={() => router.back()}
       />
       <OnboardingShell>
         <ResponsiveOnboardingLayout>

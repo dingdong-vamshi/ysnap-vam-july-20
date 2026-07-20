@@ -2,6 +2,7 @@
   "expo": {
     "name": "YSnap",
     "slug": "ysnap",
+    "scheme": "ysnap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -15,6 +16,7 @@
       "bundleIdentifier": "com.vamshiexpogo.ysnap"
     },
     "android": {
+      "package": "com.vamshiexpogo.ysnap",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -34,6 +36,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "expo-router",
       "expo-font",
       [
         "expo-audio",

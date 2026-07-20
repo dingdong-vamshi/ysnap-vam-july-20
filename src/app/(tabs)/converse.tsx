@@ -24,9 +24,10 @@ import { colors, spacing, typography } from '../../constants';
 import { supabase, callEdgeFunction } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAppAudioRecorder } from '../../utils/audioRecorder';
-import { AudioModule, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { AudioModule } from 'expo-audio';
 import { elevenLabsService } from '../../services/elevenLabs';
 import { getLanguageName, languages } from '../../constants/languages';
+import { useTranslationAudioPlayback } from '../../hooks/useTranslationAudioPlayback';
 
 const { width } = Dimensions.get('window');
 
@@ -48,8 +49,7 @@ export default function ConverseTab() {
   const { user } = useAuth();
 
   // Media players & recorders
-  const player = useAudioPlayer();
-  const status = useAudioPlayerStatus(player);
+  const translationAudio = useTranslationAudioPlayback();
   const recorder = useAppAudioRecorder();
 
   // App State
@@ -95,17 +95,12 @@ export default function ConverseTab() {
     }
   }, [user]);
 
-  // Handle playback completion to release recording buttons
   useEffect(() => {
-    const isFinished = status.duration > 0 
-      ? status.currentTime >= status.duration - 0.2 
-      : false;
-    
-    if (processingState === 'speaking' && !status.playing && (isFinished || isNaN(status.duration) || status.duration === 0)) {
+    if (processingState === 'speaking' && translationAudio.state === 'completed') {
       setProcessingState('idle');
       setStatusText('');
     }
-  }, [status.playing, status.currentTime, status.duration, processingState]);
+  }, [processingState, translationAudio.state]);
 
   // Recording timer
   useEffect(() => {
@@ -162,6 +157,17 @@ export default function ConverseTab() {
     } catch (e) {
       console.error("Error loading history:", e);
     }
+  };
+
+  const resolveHistoryAudio = async (pathOrUrl: string | null | undefined): Promise<string | null> => {
+    if (!pathOrUrl) return null;
+    if (pathOrUrl.startsWith('http')) return pathOrUrl;
+    const { data, error } = await supabase.storage.from('media').createSignedUrl(pathOrUrl, 86400);
+    if (error) {
+      console.error('Failed to resolve audio URL:', error);
+      return null;
+    }
+    return data?.signedUrl || null;
   };
 
   const uploadAudioToStorage = async (localUri: string): Promise<string | null> => {
@@ -231,6 +237,19 @@ export default function ConverseTab() {
     }
   };
 
+  const ensureSignedIn = async () => {
+    if (user) return true;
+    Alert.alert(
+      'Sign In Required',
+      'Sign in to use conversation translation.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in') },
+      ],
+    );
+    return false;
+  };
+
   const handleToggleRecording = async () => {
     if (isRecording) {
       await handleStopRecording();
@@ -242,13 +261,11 @@ export default function ConverseTab() {
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    // Stop current playback
-    try {
-      player.pause();
-    } catch (e) {
-      console.log("Error pausing player:", e);
+    if (!(await ensureSignedIn())) {
+      return;
     }
+    translationAudio.unlockOnUserGesture();
+    void translationAudio.reset();
 
     if (Platform.OS !== 'web') {
       const permission = await AudioModule.requestRecordingPermissionsAsync();
@@ -375,9 +392,7 @@ export default function ConverseTab() {
           if (ttsResult && ttsResult.url) {
             translatedAudioUrl = ttsResult.url;
             newTurn.translatedAudioUrl = ttsResult.url;
-            
-            player.replace({ uri: ttsResult.url });
-            player.play();
+            await translationAudio.play(ttsResult.url);
           }
         } catch (ttsErr) {
           console.error("TTS playback failed:", ttsErr);
@@ -420,6 +435,11 @@ export default function ConverseTab() {
 
   const handlePlayTTS = async (audioText: string, playTarget: boolean) => {
     if (!audioText) return;
+    translationAudio.unlockOnUserGesture();
+    if (translationAudio.state === 'playing') {
+      await translationAudio.toggle();
+      return;
+    }
     setProcessingState('speaking');
     setStatusText('Generating audio speech...');
     try {
@@ -429,8 +449,7 @@ export default function ConverseTab() {
         true
       );
       if (ttsResult && ttsResult.url) {
-        player.replace({ uri: ttsResult.url });
-        player.play();
+        await translationAudio.play(ttsResult.url);
       }
     } catch (e) {
       console.error("TTS generation error:", e);
@@ -543,12 +562,30 @@ export default function ConverseTab() {
                           <Pressable style={styles.blockActionCircle} onPress={() => handleCopyText(translatedText)}>
                             <Ionicons name="copy-outline" size={14} color={colors.accentBlue} />
                           </Pressable>
-                          <Pressable style={styles.blockActionCircle} onPress={() => handlePlayTTS(translatedText, true)}>
-                            <Ionicons name="volume-medium-outline" size={15} color={colors.accentBlue} />
+                          <Pressable 
+                            style={styles.blockActionCircle} 
+                            onPress={() => handlePlayTTS(translatedText, true)}
+                          >
+                            <Ionicons
+                              name={translationAudio.state === 'playing' ? 'pause' : 'play'}
+                              size={15}
+                              color={colors.accentBlue}
+                            />
+                          </Pressable>
+                          <Pressable 
+                            style={styles.blockActionCircle} 
+                            onPress={() => handlePlayTTS(translatedText, true)}
+                          >
+                            <Ionicons name="reload" size={15} color={colors.accentBlue} />
                           </Pressable>
                         </View>
                       </View>
                       <Text style={[styles.dictatedText, { color: '#2D3748' }]}>{translatedText}</Text>
+                      {translationAudio.pendingTapToPlay ? (
+                        <Pressable onPress={() => handlePlayTTS(translatedText, true)}>
+                          <Text style={styles.tapToPlayText}>Tap to play translation</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
                   </>
                 ) : null}
@@ -726,9 +763,13 @@ export default function ConverseTab() {
                     {turn.originalAudioUrl && (
                       <Pressable 
                         style={styles.actionBtn}
-                        onPress={() => {
-                          player.replace({ uri: turn.originalAudioUrl });
-                          player.play();
+                        onPress={async () => {
+                          const url = await resolveHistoryAudio(turn.originalAudioUrl);
+                          if (url) {
+                            await translationAudio.play(url);
+                          } else {
+                            Alert.alert('Playback Failed', 'No source audio available.');
+                          }
                         }}
                       >
                         <Ionicons name="play-outline" size={14} color="#1A1A1C" style={{ marginRight: 4 }} />
@@ -739,9 +780,13 @@ export default function ConverseTab() {
                     {turn.translatedAudioUrl && (
                       <Pressable 
                         style={styles.actionBtn}
-                        onPress={() => {
-                          player.replace({ uri: turn.translatedAudioUrl });
-                          player.play();
+                        onPress={async () => {
+                          const url = await resolveHistoryAudio(turn.translatedAudioUrl);
+                          if (url) {
+                            await translationAudio.play(url);
+                          } else {
+                            Alert.alert('Playback Failed', 'No translated audio available.');
+                          }
                         }}
                       >
                         <Ionicons name="volume-medium-outline" size={14} color={colors.accentBlue} style={{ marginRight: 4 }} />
@@ -977,6 +1022,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1A1A1C',
     marginLeft: 6,
+  },
+  tapToPlayText: {
+    fontSize: 12,
+    color: colors.accentBlue,
+    fontWeight: '600',
+    marginTop: 8,
   },
   micControlCard: {
     flexDirection: 'row',

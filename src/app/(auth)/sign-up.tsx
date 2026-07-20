@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, TextInput, Pressable, Alert, KeyboardAvoidingVi
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '../../contexts/AuthContext';
 import { colors } from '../../constants/colors';
@@ -10,9 +11,11 @@ import { typography } from '../../constants/typography';
 import { tempOnboardingStore, demoProfileStore } from '../../utils/tempOnboardingStore';
 import { supabase } from '../../lib/supabase';
 import { useQueryClient } from '@tanstack/react-query';
-import { SuccessFeedback, TactileButton } from '../../components';
+import { BrandMark, SuccessFeedback, TactileButton } from '../../components';
+import { PremiumCTAButton, PremiumSecondaryButton } from '../../components/auth/PremiumCTAButton';
+import * as Linking from 'expo-linking';
 
-const AUTH_CALLBACK_URL = `${(process.env.EXPO_PUBLIC_APP_URL || 'http://localhost:8081').replace(/\/$/, '')}/auth/callback`;
+const AUTH_CALLBACK_URL = Linking.createURL('auth/callback');
 const SIGNUP_RETRY_COOLDOWN_SECONDS = 60;
 
 function formatRetryTime(totalSeconds: number) {
@@ -233,21 +236,47 @@ export default function SignUpScreen() {
         
         {/* Header */}
         <View style={styles.header}>
-          <Pressable 
-            style={styles.backButton} 
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.back();
-            }}
-          >
-            <Text style={styles.backText}>← Back</Text>
-          </Pressable>
-          <Text style={styles.title}>Create account</Text>
-          <Text style={styles.subtitle}>Join YSnap to translate any language instantly with smart context.</Text>
+          <View pointerEvents="none" style={styles.decorLayer}>
+            <View style={styles.loginGlow} />
+            <View style={styles.softRing} />
+            <View style={[styles.diamond, styles.diamondOne]} />
+            <View style={[styles.diamond, styles.diamondTwo]} />
+            <Ionicons name="sparkles" size={17} color="#82AFFF" style={styles.sparkleDecor} />
+          </View>
+          <View style={styles.topRow}>
+            <Pressable
+              style={({ pressed }) => [styles.roundButton, pressed && styles.pressed]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.replace('/(auth)/sign-in');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Back to sign in"
+            >
+              <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
+            </Pressable>
+            <Pressable
+              onPress={() => router.replace('/(auth)/sign-in')}
+              style={({ pressed }) => [styles.signInPill, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Sign in"
+            >
+              <Text style={styles.signInPillText}>Sign in</Text>
+            </Pressable>
+          </View>
+          <View style={styles.brandLockup}>
+            <LinearGradient colors={['#242329', '#111114', '#070708']} style={styles.brandBadge}>
+              <View style={styles.brandHighlight} />
+              <BrandMark size={42} variant="light" />
+            </LinearGradient>
+            <Text style={styles.brandText}>YSnap</Text>
+          </View>
+          <Text style={styles.title}>Create your account</Text>
+          <Text style={styles.subtitle}>Join YSnap to translate, scan, and save your voice history with smart context.</Text>
         </View>
 
         {/* Form */}
-        <View style={styles.form}>
+        <View style={styles.formCard}>
           {pendingConfirmationEmail ? (
             <View style={styles.confirmationCard}>
               <Ionicons name="mail-unread-outline" size={28} color={colors.accentPurple} />
@@ -363,18 +392,16 @@ export default function SignUpScreen() {
           )}
 
           <View style={{ marginTop: 8, gap: 12 }}>
-            <TactileButton
+            <PremiumCTAButton
               title={signupRetrySeconds > 0 ? `Retry in ${formatRetryTime(signupRetrySeconds)}` : 'Create Account'}
-              variant="primary"
               loading={loading}
               disabled={signupRetrySeconds > 0}
               onPress={handleSignUp}
             />
 
             {reason !== 'guest-access-unavailable' && (
-              <TactileButton
-                title="Continue as Guest"
-                variant="secondary"
+              <PremiumSecondaryButton
+                title="Continue as guest"
                 onPress={handleDemoMode}
               />
             )}
@@ -418,33 +445,141 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     backgroundColor: colors.background,
     paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingTop: 24,
     paddingBottom: 40,
-    justifyContent: 'center',
   },
   header: {
-    marginTop: 20,
-    marginBottom: 30,
+    marginBottom: 20,
+    position: 'relative',
   },
-  backButton: {
-    marginBottom: 24,
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingRight: 12,
+  decorLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 190,
   },
-  backText: {
-    fontSize: 15,
-    fontFamily: typography.bodyMedium.fontFamily,
-    fontWeight: typography.bodyMedium.fontWeight,
-    color: colors.textMuted,
+  loginGlow: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: 62,
+    width: 190,
+    height: 118,
+    borderRadius: 95,
+    backgroundColor: 'rgba(24,119,242,0.07)',
+  },
+  softRing: {
+    position: 'absolute',
+    right: 54,
+    top: 78,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: 'rgba(130,175,255,0.15)',
+  },
+  diamond: {
+    position: 'absolute',
+    width: 9,
+    height: 9,
+    borderRadius: 2,
+    transform: [{ rotate: '45deg' }],
+    shadowColor: '#82AFFF',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+  },
+  diamondOne: { left: 54, top: 96, backgroundColor: '#DCE9FF' },
+  diamondTwo: { right: 104, top: 22, width: 7, height: 7, backgroundColor: '#EFEAFF' },
+  sparkleDecor: { position: 'absolute', left: 94, top: 148 },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    zIndex: 2,
+  },
+  roundButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#0A0A0C',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  signInPill: {
+    minHeight: 46,
+    paddingHorizontal: 18,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: '#0A0A0C',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  signInPillText: {
+    ...typography.label,
+    fontSize: 16,
+    color: colors.textPrimary,
+  },
+  brandLockup: {
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 18,
+    zIndex: 2,
+  },
+  brandBadge: {
+    width: 76,
+    height: 76,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#34343A',
+    shadowColor: '#050506',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.2,
+    shadowRadius: 28,
+    elevation: 8,
+  },
+  brandHighlight: {
+    position: 'absolute',
+    top: 1,
+    left: 16,
+    right: 16,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.24)',
+  },
+  brandText: {
+    fontFamily: typography.heading2.fontFamily,
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: '760' as any,
+    letterSpacing: -0.6,
+    color: colors.textPrimary,
   },
   title: {
-    fontSize: 28,
+    fontSize: 34,
+    lineHeight: 40,
     fontFamily: typography.heading1.fontFamily,
-    fontWeight: typography.heading1.fontWeight,
+    fontWeight: '760' as any,
     color: colors.textPrimary,
-    marginBottom: 12,
-    letterSpacing: -0.5,
+    marginBottom: 10,
+    letterSpacing: -0.9,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
@@ -452,18 +587,37 @@ const styles = StyleSheet.create({
     fontWeight: typography.body.fontWeight,
     color: colors.textSecondary,
     lineHeight: 22,
+    textAlign: 'center',
+    maxWidth: 360,
+    alignSelf: 'center',
   },
-  form: {
-    flex: 1,
-    justifyContent: 'flex-start',
+  formCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: '#ECECF1',
+    padding: 20,
+    shadowColor: '#0A0A0C',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.08,
+    shadowRadius: 30,
+    elevation: 6,
+  },
+  pressed: {
+    opacity: 0.62,
+    transform: [{ scale: 0.98 }],
   },
   confirmationCard: {
-    backgroundColor: colors.backgroundSoft,
+    backgroundColor: '#FBFBFD',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 18,
+    borderRadius: 24,
     padding: 22,
     gap: 12,
+    shadowColor: '#0A0A0C',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
   },
   confirmationTitle: {
     fontSize: 20,
@@ -498,15 +652,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    backgroundColor: colors.surfaceSoft,
+    backgroundColor: '#FBFBFD',
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: 18,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: typography.body.fontFamily,
     color: colors.textPrimary,
+    shadowColor: '#0A0A0C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.025,
+    shadowRadius: 10,
+    elevation: 1,
   },
   inputError: {
     borderColor: colors.error,

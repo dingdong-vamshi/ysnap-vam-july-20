@@ -11,6 +11,7 @@ import { typography } from '../constants/typography';
 import { getLanguageByCode } from '../constants/languages';
 import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useGlobalPlaybackSpeed } from '../hooks/useGlobalPlaybackSpeed';
 
 type SessionTypeFilter = 'all' | 'text' | 'voice' | 'camera' | 'conversation';
 
@@ -18,6 +19,11 @@ function AudioPlayButton({ audioUrl }: { audioUrl: string }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const player = useAudioPlayer(audioUrl);
   const status = useAudioPlayerStatus(player);
+  const playbackSpeed = useGlobalPlaybackSpeed();
+
+  useEffect(() => {
+    player.playbackRate = playbackSpeed;
+  }, [player, playbackSpeed]);
 
   useEffect(() => {
     const isFinished = status.duration > 0 
@@ -35,6 +41,7 @@ function AudioPlayButton({ audioUrl }: { audioUrl: string }) {
       setIsPlaying(false);
     } else {
       player.replace({ uri: audioUrl });
+      player.playbackRate = playbackSpeed;
       player.play();
       setIsPlaying(true);
     }

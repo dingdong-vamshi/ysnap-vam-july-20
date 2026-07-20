@@ -74,7 +74,7 @@ export default function ProfileTab() {
       await supabase.auth.signOut();
       
       setModalVisible(false);
-      router.replace('/(auth)/welcome');
+      router.replace('/(auth)/onboarding');
     } catch (e: any) {
       Alert.alert('Sign Out Error', e.message || 'Failed to sign out.');
     } finally {

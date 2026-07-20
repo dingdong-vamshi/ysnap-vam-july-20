@@ -44,6 +44,7 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
   });
 
   const routes = state.routes;
+  const activeRoute = routes[state.index];
 
   const triggerHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -100,6 +101,10 @@ export const FloatingTabBar: React.FC<FloatingTabBarProps> = ({
       transform: [{ translateX: translation.value }],
     };
   });
+
+  if (activeRoute?.name === 'camera') {
+    return null;
+  }
 
   return (
     <View

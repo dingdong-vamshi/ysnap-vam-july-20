@@ -9,15 +9,49 @@ import { supabase, callEdgeFunction } from '../lib/supabase';
 import { colors } from '../constants/colors';
 import { typography } from '../constants/typography';
 import { getLanguageByCode, languages } from '../constants/languages';
+import { elevenLabsService } from '../services/elevenLabs';
 import { Ionicons } from '@expo/vector-icons';
 import { TactileButton } from '../components';
+import { useTranslationAudioPlayback } from '../hooks/useTranslationAudioPlayback';
 
 const CHAR_LIMIT = 500;
+
+const formatDownloadDate = (value: string | null | undefined) => {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 10);
+};
+
+const slugifyFilenamePart = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'language';
+
+const buildTranslationDownload = (item: any, sourceLang: string, targetLang: string) => {
+  const date = formatDownloadDate(item.created_at);
+  const filename = `translation-${slugifyFilenamePart(sourceLang)}-to-${slugifyFilenamePart(targetLang)}-${date}.txt`;
+  const content = [
+    `Source language: ${sourceLang}`,
+    `Target language: ${targetLang}`,
+    `Date: ${date}`,
+    '',
+    'Original text:',
+    item.source_text || '',
+    '',
+    'Translated text:',
+    item.translated_text || '',
+    '',
+  ].join('\n');
+
+  return { filename, content };
+};
 
 export default function TextTranslationScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const translationAudio = useTranslationAudioPlayback();
 
   const [sourceText, setSourceText] = useState('');
   const [translationResult, setTranslationResult] = useState<{
@@ -41,6 +75,15 @@ export default function TextTranslationScreen() {
   const [editTranslatedText, setEditTranslatedText] = useState('');
   const [editNote, setEditNote] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [historyFeedback, setHistoryFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [savingHistoryIds, setSavingHistoryIds] = useState<string[]>([]);
+
+  const showHistoryFeedback = (type: 'success' | 'error', message: string) => {
+    setHistoryFeedback({ type, message });
+    setTimeout(() => {
+      setHistoryFeedback((current) => current?.message === message ? null : current);
+    }, 2500);
+  };
 
   // Fetch all text bookmarks dynamically
   const { data: bookmarks = [], refetch: refetchBookmarks } = useQuery<any[]>({
@@ -98,6 +141,7 @@ export default function TextTranslationScreen() {
 
   const loadHistoryItem = (item: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    translationAudio.reset();
     setSourceText(item.source_text);
     setTranslationResult({
       id: item.id,
@@ -124,6 +168,83 @@ export default function TextTranslationScreen() {
     }
   };
 
+  const handleSaveHistoryItem = async (item: any, sourceLang: string, targetLang: string) => {
+    if (!user) {
+      Alert.alert('Sign in Required', 'Saving translations is only available for registered users.');
+      return;
+    }
+
+    if (!item.translated_text?.trim()) {
+      showHistoryFeedback('error', 'Cannot save an empty translation.');
+      return;
+    }
+
+    const alreadySaved = bookmarks.some((bookmark) => bookmark.translation_item_id === item.id);
+    if (alreadySaved) {
+      showHistoryFeedback('success', 'Translation is already saved.');
+      return;
+    }
+
+    setSavingHistoryIds((ids) => [...ids, item.id]);
+    try {
+      const { error } = await supabase
+        .from('bookmarks')
+        .insert({
+          user_id: user.id,
+          translation_item_id: item.id,
+          source_text: item.source_text || '',
+          translated_text: item.translated_text,
+          source_language: item.source_language || nativeCode,
+          target_language: item.target_language || targetCode,
+          tags: ['text', 'kanban_to_learn'],
+          note: item.context_notes || '',
+        } as any);
+
+      if (error) throw error;
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      queryClient.invalidateQueries({ queryKey: ['homeBookmarks', user.id] });
+      await refetchBookmarks();
+      showHistoryFeedback('success', 'Translation saved.');
+    } catch (e) {
+      console.error('Error saving history item:', e);
+      showHistoryFeedback('error', 'Could not save translation.');
+    } finally {
+      setSavingHistoryIds((ids) => ids.filter((id) => id !== item.id));
+    }
+  };
+
+  const handleDownloadHistoryItem = (item: any, sourceLang: string, targetLang: string) => {
+    if (!item.translated_text?.trim()) {
+      showHistoryFeedback('error', 'Cannot download an empty translation.');
+      return;
+    }
+
+    try {
+      const { filename, content } = buildTranslationDownload(item, sourceLang, targetLang);
+
+      if (Platform.OS !== 'web' || typeof document === 'undefined') {
+        Alert.alert('Download Unavailable', 'Text file downloads are available in the web app.');
+        return;
+      }
+
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showHistoryFeedback('success', 'Translation downloaded.');
+    } catch (e) {
+      console.error('Error downloading history item:', e);
+      showHistoryFeedback('error', 'Could not download translation.');
+    }
+  };
+
   const currentBookmark = bookmarks.find(b => b.translation_item_id === translationResult?.id);
   const isBookmarked = !!currentBookmark;
 
@@ -133,6 +254,21 @@ export default function TextTranslationScreen() {
     queryFn: async () => {
       if (!user?.id) return null;
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const { data: preferences } = useQuery<any>({
+    queryKey: ['preferences', user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('selected_voice_id')
+        .eq('user_id', user.id)
+        .single();
+      if (error) return null;
       return data;
     },
     enabled: !!user?.id,
@@ -159,9 +295,28 @@ export default function TextTranslationScreen() {
     setTranslationResult(null);
   };
 
+  const ensureSignedIn = async () => {
+    if (user) return true;
+    Alert.alert(
+      'Sign In Required',
+      'Sign in to use text translation.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign In', onPress: () => router.replace('/(auth)/sign-in') },
+      ],
+    );
+    return false;
+  };
+
   const handleTranslate = async () => {
+    if (!(await ensureSignedIn())) {
+      return;
+    }
+
     if (!sourceText.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    translationAudio.unlockOnUserGesture();
+    translationAudio.reset();
     setTranslating(true);
 
     try {
@@ -195,8 +350,23 @@ export default function TextTranslationScreen() {
         alternatives,
         notes,
       });
-      setTranslating(false);
+
+      const targetVoiceId = preferences?.selected_voice_id || '21m00Tcm4TlvDq8ikWAM';
+      try {
+        const ttsResult = await elevenLabsService.generateSpeech(translated, targetVoiceId, true, translationResultData.translation_item_id);
+        if (ttsResult.url) {
+          await translationAudio.load(ttsResult.url);
+          const autoplayStarted = await translationAudio.play();
+          if (!autoplayStarted && translationAudio.pendingTapToPlay) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          }
+        }
+      } catch (ttsErr) {
+        console.error(ttsErr);
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTranslating(false);
       refetchHistory();
       const { data: currentUserData } = await supabase.auth.getUser();
       const currentUserId = user?.id || currentUserData.user?.id;
@@ -478,6 +648,54 @@ export default function TextTranslationScreen() {
                   <Ionicons name="volume-medium-outline" size={16} color={colors.accentPurple} style={{ marginRight: 4 }} />
                   <Text style={styles.translitLinkText}>Show phonetic pronunciation</Text>
                 </Pressable>
+
+                <View style={styles.playbackControls}>
+                  <Pressable
+                    style={styles.actionIcon}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      void translationAudio.toggle();
+                    }}
+                    disabled={translationAudio.state === 'generating'}
+                  >
+                    <Ionicons
+                      name={translationAudio.state === 'playing' ? 'pause' : 'play'}
+                      size={20}
+                      color={colors.accentPurple}
+                    />
+                  </Pressable>
+
+                  <Pressable
+                    style={styles.actionIcon}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      void translationAudio.replay();
+                    }}
+                    disabled={translationAudio.state === 'generating'}
+                  >
+                    <Ionicons name="reload" size={20} color={colors.accentPurple} />
+                  </Pressable>
+
+                  <Text style={styles.translationStatusText}>
+                    {translationAudio.state === 'playing'
+                      ? 'Playing'
+                      : translationAudio.state === 'paused'
+                        ? 'Paused'
+                        : translationAudio.state === 'completed'
+                          ? 'Completed'
+                          : translationAudio.state === 'failed'
+                            ? 'Playback failed'
+                            : translationAudio.state === 'generating'
+                              ? 'Preparing audio'
+                              : 'Ready'}
+                  </Text>
+                </View>
+
+                {translationAudio.pendingTapToPlay ? (
+                  <Pressable style={styles.tapToPlayButton} onPress={() => void translationAudio.play()}>
+                    <Text style={styles.tapToPlayText}>Tap to play translation</Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               {/* Context Notes Card */}
@@ -651,9 +869,20 @@ export default function TextTranslationScreen() {
         {recentTextItems && recentTextItems.length > 0 && (
           <View style={styles.historyContainer}>
             <Text style={styles.historyTitle}>Recent Translations</Text>
+            {historyFeedback ? (
+              <Text style={[
+                styles.historyFeedback,
+                historyFeedback.type === 'error' && styles.historyFeedbackError,
+              ]}>
+                {historyFeedback.message}
+              </Text>
+            ) : null}
             {recentTextItems.map((item) => {
               const sourceLang = getLanguageByCode(item.source_language)?.name || item.source_language || 'Source';
               const targetLang = getLanguageByCode(item.target_language)?.name || item.target_language || 'Target';
+              const hasTranslatedText = !!item.translated_text?.trim();
+              const isSaved = bookmarks.some((bookmark) => bookmark.translation_item_id === item.id);
+              const isSaving = savingHistoryIds.includes(item.id);
               
               return (
                 <Pressable 
@@ -678,9 +907,55 @@ export default function TextTranslationScreen() {
                   </View>
 
                   <View style={styles.historyActions}>
+                    <Pressable
+                      style={[
+                        styles.historyActionBtn,
+                        (!hasTranslatedText || isSaved || isSaving) && styles.historyActionBtnDisabled,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={isSaved ? 'Saved translation' : 'Save translation'}
+                      {...(Platform.OS === 'web' ? { title: isSaved ? 'Saved' : 'Save translation' } as any : {})}
+                      disabled={!hasTranslatedText || isSaved || isSaving}
+                      onPress={(event: any) => {
+                        event?.stopPropagation?.();
+                        void handleSaveHistoryItem(item, sourceLang, targetLang);
+                      }}
+                    >
+                      {isSaving ? (
+                        <ActivityIndicator size="small" color={colors.accentPurple} />
+                      ) : (
+                        <Ionicons
+                          name={isSaved ? 'bookmark' : 'bookmark-outline'}
+                          size={16}
+                          color={isSaved ? colors.accentPurple : colors.textMuted}
+                        />
+                      )}
+                      {isSaved ? <Text style={styles.savedActionText}>Saved</Text> : null}
+                    </Pressable>
+
+                    <Pressable
+                      style={[styles.historyActionBtn, !hasTranslatedText && styles.historyActionBtnDisabled]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Download translation"
+                      {...(Platform.OS === 'web' ? { title: 'Download translation' } as any : {})}
+                      disabled={!hasTranslatedText}
+                      onPress={(event: any) => {
+                        event?.stopPropagation?.();
+                        handleDownloadHistoryItem(item, sourceLang, targetLang);
+                      }}
+                    >
+                      <Ionicons name="download-outline" size={16} color={hasTranslatedText ? colors.textMuted : colors.textSubtle} />
+                    </Pressable>
+
                     <Pressable 
                       style={styles.historyDeleteBtn} 
-                      onPress={() => deleteHistoryItem(item.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete translation"
+                      {...(Platform.OS === 'web' ? { title: 'Delete translation' } as any : {})}
+                      onPress={(event: any) => {
+                        event?.stopPropagation?.();
+                        deleteHistoryItem(item.id);
+                      }}
                     >
                       <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
                     </Pressable>
@@ -960,6 +1235,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: typography.bodyMedium.fontFamily,
     color: colors.accentPurple,
+  },
+  playbackControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 10,
+  },
+  translationStatusText: {
+    fontSize: 12,
+    fontFamily: typography.captionMedium.fontFamily,
+    color: colors.textMuted,
+  },
+  tapToPlayButton: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(123, 97, 255, 0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  tapToPlayText: {
+    color: colors.accentPurple,
+    fontSize: 12,
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontWeight: '600',
   },
   notesCard: {
     backgroundColor: colors.surfaceWarning,
@@ -1339,6 +1639,24 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 16,
   },
+  historyFeedback: {
+    alignSelf: 'flex-start',
+    color: colors.success,
+    backgroundColor: colors.success + '12',
+    borderColor: colors.success + '30',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontFamily: typography.captionMedium.fontFamily,
+    marginBottom: 12,
+  },
+  historyFeedbackError: {
+    color: colors.error,
+    backgroundColor: colors.error + '10',
+    borderColor: colors.error + '30',
+  },
   historyCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -1397,11 +1715,37 @@ const styles = StyleSheet.create({
   historyActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
     borderTopWidth: 1,
     borderTopColor: '#f3f4f6',
     paddingTop: 10,
   },
+  historyActionBtn: {
+    minWidth: 32,
+    minHeight: 32,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 5,
+  },
+  historyActionBtnDisabled: {
+    opacity: 0.45,
+  },
+  savedActionText: {
+    fontSize: 11,
+    fontFamily: typography.captionMedium.fontFamily,
+    color: colors.accentPurple,
+    fontWeight: '700',
+  },
   historyDeleteBtn: {
-    padding: 6,
+    minWidth: 32,
+    minHeight: 32,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

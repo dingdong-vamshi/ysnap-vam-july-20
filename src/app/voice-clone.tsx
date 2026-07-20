@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Platform,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -46,7 +47,6 @@ export default function VoiceCloneScreen() {
 
   // Voice details
   const [customVoiceName, setCustomVoiceName] = useState('My Custom Clone');
-  const [selectedAccent, setSelectedAccent] = useState('US Accent');
 
   // Progress Pipeline
   const [cloningStatus, setCloningStatus] = useState('Uploading sample audio...');
@@ -81,7 +81,7 @@ export default function VoiceCloneScreen() {
       const res = await elevenLabsService.cloneVoice(
         customVoiceName,
         recordedUri,
-        selectedAccent,
+        'Voice Clone',
         consentOwnership,
         consentPrivacy,
         recordDuration
@@ -202,20 +202,6 @@ export default function VoiceCloneScreen() {
       Alert.alert('Voice Cloning Failed', err.message || 'Error occurred while calling Edge Function.');
       setStep('record');
     }
-  };
-
-  const handleSelectAccent = () => {
-    Alert.alert(
-      'Voice Accent Tag',
-      'Select matching accent for search optimization.',
-      [
-        { text: 'US Accent', onPress: () => setSelectedAccent('US Accent') },
-        { text: 'UK Accent', onPress: () => setSelectedAccent('UK Accent') },
-        { text: 'Australian', onPress: () => setSelectedAccent('Australian') },
-        { text: 'Spanish Accent', onPress: () => setSelectedAccent('Spanish Accent') },
-        { text: 'Cancel', style: 'cancel' }
-      ]
-    );
   };
 
   const selectConsentText = (type: 'ownership' | 'privacy') => {
@@ -339,14 +325,6 @@ export default function VoiceCloneScreen() {
               </Text>
             </View>
 
-            {/* Settings Row */}
-            <View style={styles.optionRow}>
-              <Pressable style={styles.accentBadge} onPress={handleSelectAccent}>
-                <Text style={styles.accentBadgeText}>{selectedAccent}</Text>
-                <Ionicons name="chevron-down" size={12} color={colors.textPrimary} style={{ marginLeft: 4 }} />
-              </Pressable>
-            </View>
-
             {/* Status Display */}
             {isRecording ? (
               <View style={styles.recordStatusCol}>
@@ -399,7 +377,7 @@ export default function VoiceCloneScreen() {
           <View style={styles.cardContainer}>
             <View style={styles.stepHeader}>
               <View style={styles.badge}><Text style={styles.badgeText}>STEP 3 OF 3</Text></View>
-              <Text style={styles.stepTitle}>Accent Model Training</Text>
+              <Text style={styles.stepTitle}>Voice Model Training</Text>
             </View>
             
             <View style={styles.pipelineContainer}>
@@ -424,7 +402,7 @@ export default function VoiceCloneScreen() {
                 </View>
                 <View style={styles.pipelineRow}>
                   <Ionicons name={cloningProgress >= 65 ? "checkmark-circle" : "ellipse-outline"} size={16} color={cloningProgress >= 65 ? colors.success : colors.textSubtle} />
-                  <Text style={styles.pipelineRowText}>Accent profiles sync</Text>
+                  <Text style={styles.pipelineRowText}>Voice profile sync</Text>
                 </View>
                 <View style={styles.pipelineRow}>
                   <Ionicons name={cloningProgress >= 100 ? "checkmark-circle" : "ellipse-outline"} size={16} color={cloningProgress >= 100 ? colors.success : colors.textSubtle} />
@@ -590,24 +568,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     lineHeight: 22,
     fontStyle: 'italic',
-  },
-  optionRow: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  accentBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceSoft,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  accentBadgeText: {
-    ...typography.captionMedium,
-    color: colors.textPrimary,
   },
   recordStatusCol: {
     alignItems: 'center',

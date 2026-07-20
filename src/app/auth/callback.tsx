@@ -126,7 +126,7 @@ export default function AuthCallback() {
         router.replace('/(auth)/sign-in');
       }
     } else {
-      router.replace('/(auth)/welcome');
+      router.replace('/(auth)/onboarding');
     }
   };
 

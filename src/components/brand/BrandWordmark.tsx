@@ -28,7 +28,7 @@ export const BrandWordmark: React.FC<BrandWordmarkProps> = ({
         ]}
         accessibilityLabel="YSnap logo wordmark"
       >
-        ysnap
+        YSnap
       </Text>
     </View>
   );

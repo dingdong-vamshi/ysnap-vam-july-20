@@ -1,6 +1,6 @@
-import { createClient, type Session } from '@supabase/supabase-js';
+import { createClient, processLock, type Session } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import type { Database } from '../types/database';
 
 const supabaseUrl =
@@ -21,11 +21,10 @@ try {
 
 if (
   parsedSupabaseUrl.protocol !== 'https:' ||
-  parsedSupabaseUrl.hostname !==
-    'jstylllvekaqibooizbl.supabase.co'
+  !parsedSupabaseUrl.hostname
 ) {
   throw new Error(
-    'EXPO_PUBLIC_SUPABASE_URL is pointing to the wrong project'
+    'EXPO_PUBLIC_SUPABASE_URL must be a valid HTTPS project URL'
   );
 }
 
@@ -74,8 +73,21 @@ export const supabase = createClient<Database>(supabaseUrl, supabasePublishableK
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    lock: processLock,
   },
 });
+
+// Native apps do not have browser visibility events, so refresh tokens only
+// while the application is active. Register this once with the shared client.
+if (Platform.OS !== 'web') {
+  AppState.addEventListener('change', (state) => {
+    if (state === 'active') {
+      supabase.auth.startAutoRefresh();
+    } else {
+      supabase.auth.stopAutoRefresh();
+    }
+  });
+}
 
 let anonymousSessionPromise: Promise<Session> | null = null;
 
@@ -88,11 +100,28 @@ export class AuthenticationRequiredError extends Error {
   }
 }
 
-async function readFunctionError(error: unknown): Promise<Error> {
+async function readFunctionError(error: unknown, functionName = 'edge-function'): Promise<Error> {
   const fallbackMessage = error instanceof Error ? error.message : 'Edge function request failed';
+  const status = (error as { status?: number } | null)?.status;
   const context = (error as { context?: Response } | null)?.context;
 
+  if (status === 401) {
+    return new Error('Your session is not authenticated for this function. Sign in and try again.');
+  }
+  if (status === 403) {
+    return new Error('You do not have permission to access this translation feature.');
+  }
+  if (status === 404) {
+    return new Error(`The ${functionName} Edge Function is not deployed or not reachable.`);
+  }
+  if (status === 429) {
+    return new Error('Too many translation requests. Please wait a moment and try again.');
+  }
+
   if (!context || typeof context.clone !== 'function') {
+    if (fallbackMessage.includes('Failed to send a request to the Edge Function')) {
+      return new Error(`Failed to send a request to the ${functionName} Edge Function. Check your network and function deployment.`);
+    }
     return new Error(fallbackMessage);
   }
 
@@ -116,7 +145,7 @@ async function readFunctionError(error: unknown): Promise<Error> {
     // Keep the SDK fallback when the function did not return JSON.
   }
 
-  return new Error(fallbackMessage);
+    return new Error(fallbackMessage);
 }
 
 async function getOrCreateFunctionSession(): Promise<Session> {
@@ -178,7 +207,7 @@ export async function callEdgeFunction<T = unknown>(
     clearTimeout(timeoutId);
 
     if (error) {
-      return { data: null, error: await readFunctionError(error) };
+      return { data: null, error: await readFunctionError(error, functionName) };
     }
 
     return { data: data as T, error: null };

@@ -22,6 +22,7 @@ import { typography } from '../constants/typography';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { elevenLabsService, Voice } from '../services/elevenLabs';
+import { useGlobalPlaybackSpeed } from '../hooks/useGlobalPlaybackSpeed';
 
 export default function VoiceLibraryScreen() {
   const router = useRouter();
@@ -35,6 +36,11 @@ export default function VoiceLibraryScreen() {
   // Setup real audio player hook
   const player = useAudioPlayer('');
   const status = useAudioPlayerStatus(player);
+  const playbackSpeed = useGlobalPlaybackSpeed();
+
+  useEffect(() => {
+    player.playbackRate = playbackSpeed;
+  }, [player, playbackSpeed]);
 
   // Fetch Cloned Voices from Supabase
   const { data: clonedVoices = [] } = useQuery<any[]>({
@@ -102,6 +108,7 @@ export default function VoiceLibraryScreen() {
       }
       setPlayingVoiceId(voiceId);
       player.replace({ uri: previewUrl });
+      player.playbackRate = playbackSpeed;
       player.play();
     }
   };

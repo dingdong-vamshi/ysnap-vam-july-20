@@ -99,8 +99,6 @@ function RootLayoutContent() {
 
   const isTransitioning = (authLoading || isStartingGuest || (!!user && profileLoading)) && segments.join('/') !== 'auth/callback';
 
-  const FORCE_WELCOME_TEST = true; // Set to true to verify onboarding flow sequences starting from welcome
-
   useEffect(() => {
     if (isTransitioning) return;
 
@@ -139,12 +137,12 @@ function RootLayoutContent() {
 
     // 2. No Authenticated User
     if (!user) {
-      const allowedPreAuthRoutes = ['welcome', 'onboarding', 'sign-up', 'sign-in'];
+      const allowedPreAuthRoutes = ['onboarding', 'sign-up', 'sign-in'];
       const currentSubRoute = segments[1];
       
       const isAllowed = inAuthGroup && allowedPreAuthRoutes.includes(currentSubRoute);
       if (!isAllowed) {
-        router.replace('/(auth)/welcome');
+        router.replace('/(auth)/onboarding');
       }
       return;
     }
@@ -202,21 +200,26 @@ function RootLayoutContent() {
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/welcome" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/sign-up" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/onboarding" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/onboarding-languages" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)/onboarding-permissions" options={{ headerShown: false }} />
+      <Stack.Protected guard={!user && !isDemo}>
+        <Stack.Screen name="(auth)/sign-in" />
+        <Stack.Screen name="(auth)/sign-up" />
+        <Stack.Screen name="(auth)/onboarding" />
+      </Stack.Protected>
+      <Stack.Protected guard={!!user || isDemo}>
+        <Stack.Screen name="(auth)/onboarding-languages" />
+        <Stack.Screen name="(auth)/onboarding-permissions" />
+      </Stack.Protected>
+      <Stack.Protected guard={!!user}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="conversation-summary" options={{ presentation: 'card' }} />
+        <Stack.Screen name="settings" options={{ presentation: 'card' }} />
+        <Stack.Screen name="privacy-data-usage" options={{ presentation: 'card' }} />
+        <Stack.Screen name="voice-library" options={{ presentation: 'card' }} />
+        <Stack.Screen name="voice-clone" options={{ presentation: 'card' }} />
+        <Stack.Screen name="voice-changer" options={{ presentation: 'card' }} />
+        <Stack.Screen name="terms" options={{ presentation: 'card' }} />
+      </Stack.Protected>
       <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-      <Stack.Screen name="conversation-summary" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="settings" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="privacy-data-usage" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="voice-library" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="voice-clone" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="voice-changer" options={{ presentation: 'card', headerShown: false }} />
-      <Stack.Screen name="terms" options={{ presentation: 'card', headerShown: false }} />
     </Stack>
   );
 }
