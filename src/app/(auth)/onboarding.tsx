@@ -84,7 +84,12 @@ export default function Onboarding() {
   const router = useRouter();
   const { width, height } = useWindowDimensions();
   const pageWidth = Math.min(width, 480);
-  const isSmall = height < 740 || width < 360;
+  const isShort = height < 860;
+  const isVeryShort = height < 740;
+  const isNarrow = width < 375;
+  const isShortLandscape = height < 520 && width > height;
+  const isSmall = isShort || width < 390;
+  const isTiny = isVeryShort || width < 340;
   const scrollRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [step, setStep] = useState(0);
@@ -96,7 +101,7 @@ export default function Onboarding() {
         highlight: 1,
         body: 'See, capture, and translate the world around you instantly.',
         cta: "Let’s Get Started",
-        visual: <CameraTranslationHero compact={isSmall} />,
+        visual: <CameraTranslationHero compact={isSmall} tiny={isTiny} landscape={isShortLandscape} />,
       },
       {
         lines: ['One Camera.', 'Unlimited', 'Translation.'],
@@ -110,10 +115,10 @@ export default function Onboarding() {
         highlight: 1,
         body: 'Point, scan, and understand anything around you.',
         cta: 'Start Exploring',
-        visual: <PhoneVisionHero compact={isSmall} />,
+        visual: <PhoneVisionHero compact={isSmall} tiny={isTiny} landscape={isShortLandscape} />,
       },
     ],
-    [isSmall],
+    [isSmall, isTiny, isShortLandscape],
   );
 
   const completeOnboarding = () => {
@@ -166,23 +171,43 @@ export default function Onboarding() {
           style={styles.pager}
         >
           {slides.map((slide, index) => (
-            <View key={slide.cta} style={[styles.slide, { width: pageWidth }]}>
-              <View style={styles.copyBlock}>
+            <View
+              key={slide.cta}
+              style={[
+                styles.slide,
+                isSmall && styles.slideCompact,
+                isTiny && styles.slideTiny,
+                isShortLandscape && styles.slideLandscape,
+                { width: pageWidth, paddingHorizontal: isNarrow ? 22 : 28 },
+              ]}
+            >
+              <View style={[styles.copyBlock, isSmall && styles.copyBlockCompact, isShortLandscape && styles.copyBlockLandscape]}>
                 {index === 0 ? <BrandStrip /> : null}
                 <DecorLayer variant={index} />
-                <Headline lines={slide.lines} highlight={slide.highlight} compact={isSmall} />
-                <ProgressBars activeIndex={index} />
+                <Headline lines={slide.lines} highlight={slide.highlight} compact={isSmall || isShortLandscape} />
+                <ProgressBars activeIndex={index} compact={isSmall} />
                 <Text style={[styles.bodyText, isSmall && styles.bodyTextSmall]}>{slide.body}</Text>
               </View>
 
-              <View style={[styles.visualArea, isSmall && styles.visualAreaSmall]}>
-                {slide.visual}
-              </View>
+              <View style={[styles.stage, isShortLandscape && styles.stageLandscape]}>
+                <View
+                  style={[
+                    styles.visualArea,
+                    index === 0 && styles.cameraVisualArea,
+                    index === 2 && styles.phoneVisualArea,
+                    isSmall && styles.visualAreaSmall,
+                    isTiny && styles.visualAreaTiny,
+                    isShortLandscape && styles.visualAreaLandscape,
+                  ]}
+                >
+                  {slide.visual}
+                </View>
 
-              <View style={styles.footer}>
-                {index === 0 ? <BenefitsRow compact={isSmall} /> : null}
-                {index === 2 ? <InfoCard /> : null}
-                <PremiumCTAButton title={slide.cta} onPress={handleNext} />
+                <View style={[styles.footer, isSmall && styles.footerCompact, isShortLandscape && styles.footerLandscape]}>
+                  {index === 0 ? <BenefitsRow compact={isSmall || isShortLandscape} landscape={isShortLandscape} /> : null}
+                  {index === 2 ? <InfoCard compact={isShortLandscape} /> : null}
+                  <PremiumCTAButton title={slide.cta} onPress={handleNext} />
+                </View>
               </View>
             </View>
           ))}
@@ -267,9 +292,9 @@ function Headline({
   );
 }
 
-function ProgressBars({ activeIndex }: { activeIndex: number }) {
+function ProgressBars({ activeIndex, compact }: { activeIndex: number; compact: boolean }) {
   return (
-    <View style={styles.progressRow} accessibilityRole="progressbar">
+    <View style={[styles.progressRow, compact && styles.progressRowCompact]} accessibilityRole="progressbar">
       {Array.from({ length: SLIDE_COUNT }).map((_, index) => (
         <View key={index} style={[styles.progressBar, index === activeIndex && styles.progressBarActive]} />
       ))}
@@ -309,9 +334,9 @@ function FloatingIcon({
   );
 }
 
-function CameraTranslationHero({ compact }: { compact: boolean }) {
+function CameraTranslationHero({ compact, tiny, landscape }: { compact: boolean; tiny: boolean; landscape: boolean }) {
   return (
-    <View style={[styles.cameraHero, compact && styles.cameraHeroCompact]}>
+    <View style={[styles.cameraHero, compact && styles.cameraHeroCompact, tiny && styles.cameraHeroTiny, landscape && styles.cameraHeroLandscape]}>
       <View style={styles.cameraOrbitOuter} />
       <View style={styles.cameraOrbitInner} />
       <View style={styles.heroHalo} />
@@ -319,7 +344,7 @@ function CameraTranslationHero({ compact }: { compact: boolean }) {
       <View style={styles.heroSparkleTwo} />
       <FloatingIcon icon="mic-outline" tone={accent} style={styles.floatMic} size={compact ? 22 : 25} />
       <FloatingIcon icon="language-outline" tone={accent} style={styles.floatLanguage} size={compact ? 22 : 25} />
-      <FloatingIcon icon="document-text-outline" tone={colors.textPrimary} style={styles.floatDoc} size={compact ? 21 : 24} muted />
+      {!tiny ? <FloatingIcon icon="document-text-outline" tone={colors.textPrimary} style={styles.floatDoc} size={compact ? 21 : 24} muted /> : null}
       <FloatingIcon icon="chatbubbles-outline" tone={purple} style={styles.floatChat} size={compact ? 22 : 25} />
       <FloatingIcon icon="scan-outline" tone={colors.accentGreen} style={styles.floatScan} size={compact ? 22 : 25} />
 
@@ -348,13 +373,13 @@ function CameraTranslationHero({ compact }: { compact: boolean }) {
   );
 }
 
-function BenefitsRow({ compact }: { compact: boolean }) {
+function BenefitsRow({ compact, landscape = false }: { compact: boolean; landscape?: boolean }) {
   return (
-    <View style={[styles.benefitsRow, compact && styles.benefitsRowCompact]}>
+    <View style={[styles.benefitsRow, compact && styles.benefitsRowCompact, landscape && styles.benefitsRowLandscape]}>
       {benefitItems.map((item) => (
         <View key={item.label} style={styles.benefitItem}>
           <Ionicons name={item.icon as any} size={compact ? 19 : 21} color={item.label.includes('Secure') ? colors.textPrimary : accent} />
-          <Text style={[styles.benefitLabel, compact && styles.benefitLabelSmall]}>{item.label}</Text>
+          <Text style={[styles.benefitLabel, compact && styles.benefitLabelSmall, landscape && styles.benefitLabelLandscape]}>{item.label}</Text>
         </View>
       ))}
     </View>
@@ -383,14 +408,14 @@ function FeatureStack({ compact }: { compact: boolean }) {
   );
 }
 
-function PhoneVisionHero({ compact }: { compact: boolean }) {
+function PhoneVisionHero({ compact, tiny, landscape }: { compact: boolean; tiny: boolean; landscape: boolean }) {
   return (
-    <View style={[styles.phoneHero, compact && styles.phoneHeroCompact]}>
+    <View style={[styles.phoneHero, compact && styles.phoneHeroCompact, tiny && styles.phoneHeroTiny, landscape && styles.phoneHeroLandscape]}>
       <View style={styles.phoneOrbit} />
       <FloatingIcon icon="language-outline" tone={accent} style={styles.phoneLang} size={24} />
       <FloatingIcon icon="leaf-outline" tone={colors.accentGreen} style={styles.phoneLeaf} size={25} />
       <FloatingIcon icon="calculator-outline" tone={purple} style={styles.phoneMath} size={25} />
-      <FloatingIcon icon="globe-outline" tone={colors.textPrimary} style={styles.phoneGlobe} size={26} />
+      {!tiny ? <FloatingIcon icon="globe-outline" tone={colors.textPrimary} style={styles.phoneGlobe} size={26} /> : null}
       <FloatingIcon icon="document-text-outline" tone={colors.accentOrange} style={styles.phonePaper} size={23} />
 
       <View style={styles.phoneTilt}>
@@ -429,15 +454,15 @@ function PhoneVisionHero({ compact }: { compact: boolean }) {
   );
 }
 
-function InfoCard() {
+function InfoCard({ compact = false }: { compact?: boolean }) {
   return (
-    <View style={styles.infoCard}>
-      <View style={styles.infoIcon}>
-        <Ionicons name="sparkles" size={26} color={accent} />
+    <View style={[styles.infoCard, compact && styles.infoCardCompact]}>
+      <View style={[styles.infoIcon, compact && styles.infoIconCompact]}>
+        <Ionicons name="sparkles" size={compact ? 19 : 26} color={accent} />
       </View>
       <View style={styles.infoCopy}>
-        <Text style={styles.infoTitle}>Smart. Fast. Reliable.</Text>
-        <Text style={styles.infoText}>Translate and understand the world from your pocket.</Text>
+        <Text style={[styles.infoTitle, compact && styles.infoTitleCompact]}>Smart. Fast. Reliable.</Text>
+        <Text style={[styles.infoText, compact && styles.infoTextCompact]}>Translate and understand the world from your pocket.</Text>
       </View>
     </View>
   );
@@ -508,12 +533,30 @@ const styles = StyleSheet.create({
   pager: { flex: 1 },
   slide: {
     flex: 1,
-    paddingHorizontal: 28,
     paddingBottom: 14,
+  },
+  slideCompact: {
+    paddingBottom: 10,
+  },
+  slideTiny: {
+    paddingBottom: 8,
+  },
+  slideLandscape: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 16,
+    paddingBottom: 8,
   },
   copyBlock: {
     position: 'relative',
     paddingTop: 4,
+  },
+  copyBlockCompact: {
+    paddingTop: 0,
+  },
+  copyBlockLandscape: {
+    width: '42%',
+    alignSelf: 'center',
   },
   brandStrip: {
     flexDirection: 'row',
@@ -567,6 +610,10 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 24,
   },
+  progressRowCompact: {
+    marginTop: 14,
+    marginBottom: 16,
+  },
   progressBar: {
     width: 42,
     height: 6,
@@ -592,18 +639,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
+  stage: {
+    flex: 1,
+    minHeight: 0,
+  },
+  stageLandscape: {
+    justifyContent: 'center',
+  },
   visualArea: {
     flex: 1,
     minHeight: 0,
     justifyContent: 'center',
     overflow: 'visible',
   },
+  cameraVisualArea: {
+    justifyContent: 'flex-start',
+    paddingTop: 18,
+  },
+  phoneVisualArea: {
+    justifyContent: 'center',
+    paddingTop: 10,
+  },
   visualAreaSmall: {
-    flex: 0.94,
+    flex: 0.78,
+  },
+  visualAreaTiny: {
+    flex: 0.64,
+    paddingTop: 4,
+  },
+  visualAreaLandscape: {
+    flex: 0,
+    minHeight: 142,
+    paddingTop: 0,
+    justifyContent: 'center',
   },
   footer: {
     gap: 14,
     paddingBottom: Platform.OS === 'ios' ? 8 : 4,
+  },
+  footerCompact: {
+    gap: 10,
+  },
+  footerLandscape: {
+    gap: 6,
+    paddingBottom: 0,
   },
   pressed: {
     opacity: 0.66,
@@ -677,8 +756,16 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   cameraHeroCompact: {
-    minHeight: 250,
-    transform: [{ scale: 0.86 }],
+    minHeight: 244,
+    transform: [{ scale: 0.84 }],
+  },
+  cameraHeroTiny: {
+    minHeight: 214,
+    transform: [{ scale: 0.74 }],
+  },
+  cameraHeroLandscape: {
+    minHeight: 142,
+    transform: [{ scale: 0.5 }],
   },
   cameraOrbitOuter: {
     position: 'absolute',
@@ -918,6 +1005,9 @@ const styles = StyleSheet.create({
   benefitsRowCompact: {
     marginTop: -8,
   },
+  benefitsRowLandscape: {
+    marginTop: 0,
+  },
   benefitItem: {
     width: '24%',
     alignItems: 'center',
@@ -934,6 +1024,10 @@ const styles = StyleSheet.create({
   benefitLabelSmall: {
     fontSize: 10,
     lineHeight: 14,
+  },
+  benefitLabelLandscape: {
+    fontSize: 9,
+    lineHeight: 12,
   },
 
   featureStack: {
@@ -1010,8 +1104,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   phoneHeroCompact: {
-    minHeight: 292,
-    transform: [{ scale: 0.88 }],
+    minHeight: 278,
+    transform: [{ scale: 0.82 }],
+  },
+  phoneHeroTiny: {
+    minHeight: 232,
+    transform: [{ scale: 0.7 }],
+  },
+  phoneHeroLandscape: {
+    minHeight: 142,
+    transform: [{ scale: 0.48 }],
   },
   phoneOrbit: {
     position: 'absolute',
@@ -1278,6 +1380,12 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     elevation: 4,
   },
+  infoCardCompact: {
+    minHeight: 58,
+    borderRadius: 18,
+    padding: 8,
+    gap: 9,
+  },
   infoIcon: {
     width: 58,
     height: 58,
@@ -1285,6 +1393,11 @@ const styles = StyleSheet.create({
     backgroundColor: softSurface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  infoIconCompact: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   infoCopy: { flex: 1 },
   infoTitle: {
@@ -1294,11 +1407,20 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: -0.2,
   },
+  infoTitleCompact: {
+    fontSize: 12,
+    lineHeight: 15,
+  },
   infoText: {
     marginTop: 3,
     fontSize: 12,
     lineHeight: 17,
     fontWeight: '600',
     color: '#62636A',
+  },
+  infoTextCompact: {
+    marginTop: 1,
+    fontSize: 9,
+    lineHeight: 12,
   },
 });
