@@ -19,7 +19,8 @@ export async function parseJsonBody<T>(req: Request): Promise<T> {
   try {
     return await req.json() as T;
   } catch (err) {
-    throw new Error('Malformed JSON body: ' + err.message);
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error('Malformed JSON body: ' + message);
   }
 }
 
@@ -116,11 +117,11 @@ export async function logUsageEvent(
   }
 }
 
-// Gemini 3.5 Flash is always attempted first. Translation is latency-sensitive,
-// so a stable Flash-Lite model keeps the app usable during temporary 429/5xx
-// capacity events from the primary model.
-export const GEMINI_MODEL = "gemini-3.5-flash";
-export const GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite";
+// Gemini Flash is attempted first. Translation and image analysis are
+// latency-sensitive, so Flash-Lite keeps the app usable during temporary
+// 429/5xx capacity events from the primary model.
+export const GEMINI_MODEL = "gemini-2.5-flash";
+export const GEMINI_FALLBACK_MODEL = "gemini-flash-lite-latest";
 
 export type GeneratedTextResult = {
   text: string;
@@ -385,7 +386,8 @@ export function safeParseAIJson<T extends Record<string, any>>(
   try {
     return JSON.parse(cleanJson) as T;
   } catch (err) {
-    console.error("Failed standard JSON parse, using regex fallback:", err.message);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Failed standard JSON parse, using regex fallback:", message);
     const result = {} as any;
 
     const extractRegexValue = (key: string): any => {
@@ -432,4 +434,3 @@ export function safeParseAIJson<T extends Record<string, any>>(
     return result as T;
   }
 }
-

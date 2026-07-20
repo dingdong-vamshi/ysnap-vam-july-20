@@ -393,6 +393,30 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Calorie Tracker Entry */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Calorie Tracker</Text>
+          <Pressable
+            style={styles.calorieTrackerCard}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/calorie-tracker');
+            }}
+          >
+            <View style={styles.calorieTrackerIcon}>
+              <Ionicons name="analytics-outline" size={22} color={colors.accentPurple} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.calorieTrackerTitle}>Calorie Tracker</Text>
+              <Text style={styles.calorieTrackerDesc}>Scan food, edit portions, and track daily nutrition totals.</Text>
+            </View>
+            <View style={styles.calorieTrackerCTA}>
+              <Text style={styles.calorieTrackerCTAText}>Open</Text>
+              <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+            </View>
+          </Pressable>
+        </View>
+
         {/* Voice profiles selections */}
         <View style={styles.section}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -923,6 +947,54 @@ const styles = StyleSheet.create({
     ...typography.micro,
     color: colors.textInverse,
     fontWeight: '600',
+  },
+  calorieTrackerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 18,
+    padding: 14,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    elevation: 2,
+  },
+  calorieTrackerIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: 'rgba(124, 108, 208, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calorieTrackerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  calorieTrackerDesc: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.textMuted,
+    marginTop: 3,
+  },
+  calorieTrackerCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.accentPurple,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  calorieTrackerCTAText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   sectionSubtitle: {
     ...typography.caption,

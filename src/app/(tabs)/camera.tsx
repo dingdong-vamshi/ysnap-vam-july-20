@@ -17,6 +17,7 @@ import {
   TextInput,
   Modal,
   Clipboard,
+  Share,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions, FlashMode } from 'expo-camera';
@@ -37,6 +38,26 @@ import { useTranslationAudioPlayback } from '../../hooks/useTranslationAudioPlay
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 type CameraMode = 'ocr' | 'food' | 'menu' | 'ar';
+type ARScanMode = 'medical' | 'coin' | 'rock' | 'plant' | 'essay';
+type ARLoadingStep = 'Preparing image' | 'Uploading' | 'Analysing' | 'Identifying' | 'Preparing results';
+
+type ARScanResultBase = {
+  mode: ARScanMode;
+  title: string;
+  subtitle: string;
+  confidence?: number;
+  isMock: boolean;
+  summary: string;
+  sections: Array<{
+    title: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    accent: string;
+    bullets: string[];
+  }>;
+  disclaimer?: string;
+  extractedText?: string;
+  essay?: string;
+};
 
 interface PastScanSession {
   id: string;
@@ -74,6 +95,70 @@ interface PastScanSession {
   };
 }
 
+const AR_SCAN_MODES: Array<{
+  id: ARScanMode;
+  label: string;
+  shortLabel: string;
+  description: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: string;
+}> = [
+  {
+    id: 'medical',
+    label: 'Medical / Skin',
+    shortLabel: 'Health',
+    description: 'Visual skin guidance',
+    icon: 'medical-outline',
+    accent: '#7C5CE6',
+  },
+  {
+    id: 'coin',
+    label: 'Coin Identifier',
+    shortLabel: 'Coins',
+    description: 'Country, value clues',
+    icon: 'disc-outline',
+    accent: '#D69E2E',
+  },
+  {
+    id: 'rock',
+    label: 'Rock Identifier',
+    shortLabel: 'Rocks',
+    description: 'Minerals and formation',
+    icon: 'diamond-outline',
+    accent: '#7C6CD0',
+  },
+  {
+    id: 'plant',
+    label: 'Plant Identifier',
+    shortLabel: 'Plants',
+    description: 'Plant care basics',
+    icon: 'leaf-outline',
+    accent: '#39A96B',
+  },
+  {
+    id: 'essay',
+    label: 'Essay Scanner',
+    shortLabel: 'Essay',
+    description: 'Extract and draft',
+    icon: 'create-outline',
+    accent: '#5B8DEF',
+  },
+];
+
+const AR_LOADING_STEPS: ARLoadingStep[] = [
+  'Preparing image',
+  'Uploading',
+  'Analysing',
+  'Identifying',
+  'Preparing results',
+];
+
+const getARModeConfig = (scanMode: ARScanMode) =>
+  AR_SCAN_MODES.find((item) => item.id === scanMode) || AR_SCAN_MODES[0];
+
+const sanitizeFilenamePart = (value: string) =>
+  value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'scan';
+
 export default function CameraScreen() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -91,6 +176,10 @@ export default function CameraScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [arScanMode, setARScanMode] = useState<ARScanMode>('medical');
+  const [arLoadingStep, setARLoadingStep] = useState<ARLoadingStep>('Preparing image');
+  const [savedARScans, setSavedARScans] = useState<string[]>([]);
+  const [showARModePicker, setShowARModePicker] = useState(false);
   
   // Selected dish details modal in Menu mode
   const [selectedDish, setSelectedDish] = useState<any | null>(null);
@@ -236,6 +325,254 @@ export default function CameraScreen() {
     enabled: !!user?.id,
   });
   const targetLanguage = profile?.primary_target_language || 'en';
+  const arEndpointName = process.env.EXPO_PUBLIC_AR_SCAN_ENDPOINT?.trim();
+  const isDevelopmentBuild = process.env.NODE_ENV !== 'production';
+
+  const createMockARResult = (scanMode: ARScanMode): ARScanResultBase => {
+    const sharedMockNote = 'Development mock result — configure the secure Gemini backend before using real AR analysis.';
+    const results: Record<ARScanMode, ARScanResultBase> = {
+      medical: {
+        mode: 'medical',
+        title: 'Possible visual skin irritation',
+        subtitle: 'This may resemble a mild rash pattern',
+        confidence: 72,
+        isMock: true,
+        summary: sharedMockNote,
+        sections: [
+          {
+            title: 'Possible visual match',
+            icon: 'medical-outline',
+            accent: '#7C5CE6',
+            bullets: [
+              'Redness or small bumps may visually resemble irritation.',
+              'AI confidence should be treated as uncertainty, not diagnosis.',
+              'Lighting, focus, and skin tone can change visual interpretation.',
+            ],
+          },
+          {
+            title: 'Common possible triggers',
+            icon: 'warning-outline',
+            accent: '#D97706',
+            bullets: ['New cosmetics or soaps', 'Friction, sweat, or fabric irritation', 'Environmental allergens'],
+          },
+          {
+            title: 'General care guidance',
+            icon: 'shield-checkmark-outline',
+            accent: '#39A96B',
+            bullets: ['Keep the area clean and avoid scratching.', 'Avoid newly introduced products until checked.', 'Seek medical help if symptoms spread, hurt, or persist.'],
+          },
+        ],
+        disclaimer:
+          'This AI result is for general information only and is not a medical diagnosis. Skin conditions can look similar. Consult a qualified healthcare professional for persistent, painful, spreading, severe, or concerning symptoms.',
+      },
+      coin: {
+        mode: 'coin',
+        title: 'Possible coin match',
+        subtitle: 'Country and denomination clues detected',
+        confidence: 78,
+        isMock: true,
+        summary: sharedMockNote,
+        sections: [
+          {
+            title: 'Overview',
+            icon: 'disc-outline',
+            accent: '#D69E2E',
+            bullets: ['Likely circulating coin with visible denomination marks.', 'Country, year, and mint marks need a clearer close-up for confidence.', 'Front/back details can be compared after retake.'],
+          },
+          {
+            title: 'Value guidance',
+            icon: 'cash-outline',
+            accent: '#39A96B',
+            bullets: ['Estimated value can vary based on authenticity, condition, mint year, mint mark, and collector demand.', 'Never treat visual AI output as a guaranteed appraisal.'],
+          },
+        ],
+      },
+      rock: {
+        mode: 'rock',
+        title: 'Possible rock/mineral match',
+        subtitle: 'Texture and color pattern analysis',
+        confidence: 69,
+        isMock: true,
+        summary: sharedMockNote,
+        sections: [
+          {
+            title: 'Identification clues',
+            icon: 'diamond-outline',
+            accent: '#7C6CD0',
+            bullets: ['Speckled texture may suggest a common igneous or sedimentary sample.', 'Mineral composition is approximate from image only.', 'Try natural light and include scale for better analysis.'],
+          },
+          {
+            title: 'Common use and formation',
+            icon: 'earth-outline',
+            accent: '#5B8DEF',
+            bullets: ['Formation depends on grain size, layers, and mineral mix.', 'Professional or lab testing is needed for accurate geological identification.'],
+          },
+        ],
+        disclaimer:
+          'Visual rock identification is approximate. Professional or laboratory testing may be required for accurate geological identification.',
+      },
+      plant: {
+        mode: 'plant',
+        title: 'Possible plant match',
+        subtitle: 'Leaf shape and growth pattern review',
+        confidence: 74,
+        isMock: true,
+        summary: sharedMockNote,
+        sections: [
+          {
+            title: 'Plant overview',
+            icon: 'leaf-outline',
+            accent: '#39A96B',
+            bullets: ['Leaf shape and color can help narrow the family.', 'Scientific name requires a clearer image of leaves, stem, flowers, or fruit.', 'Similar-looking plants may be visually close.'],
+          },
+          {
+            title: 'Basic care guidance',
+            icon: 'sunny-outline',
+            accent: '#D69E2E',
+            bullets: ['Check light exposure, soil moisture, and leaf condition.', 'Avoid consuming any plant based only on a photo match.'],
+          },
+        ],
+        disclaimer:
+          'Do not consume a plant based only on AI identification. Some toxic plants closely resemble edible species. Confirm with a qualified local expert.',
+      },
+      essay: {
+        mode: 'essay',
+        title: 'Essay draft workspace',
+        subtitle: 'Extract, review, then refine',
+        confidence: 80,
+        isMock: true,
+        summary: sharedMockNote,
+        extractedText: 'Technology is a useful servant but a dangerous master. Write an essay in 450–500 words expressing your views.',
+        essay:
+          'Technology is most helpful when people use it with clear purpose. It saves time, improves access to knowledge, and connects communities across distances. However, when technology begins to control attention, habits, and decisions, it can become harmful. A balanced life requires using digital tools wisely while protecting focus, creativity, privacy, and human relationships.',
+        sections: [
+          {
+            title: 'Essay settings',
+            icon: 'options-outline',
+            accent: '#5B8DEF',
+            bullets: ['Word count: 500', 'Tone: Balanced', 'Audience: General', 'Essay type: Argumentative'],
+          },
+          {
+            title: 'Responsible use',
+            icon: 'checkmark-done-outline',
+            accent: '#39A96B',
+            bullets: ['Review and fact-check before submitting.', 'Add your own examples and ideas.', 'Use the draft as support, not as a replacement for your work.'],
+          },
+        ],
+      },
+    };
+
+    return results[scanMode];
+  };
+
+  const normalizeARResult = (payload: any, scanMode: ARScanMode): ARScanResultBase | null => {
+    const raw = payload?.ar_result || payload?.arResult || payload?.result || payload;
+    if (!raw || typeof raw !== 'object') return null;
+
+    const sections = Array.isArray(raw.sections)
+      ? raw.sections
+          .filter((section: any) => section && typeof section.title === 'string' && Array.isArray(section.bullets))
+          .map((section: any) => ({
+            title: section.title,
+            icon: (section.icon || getARModeConfig(scanMode).icon) as keyof typeof Ionicons.glyphMap,
+            accent: section.accent || getARModeConfig(scanMode).accent,
+            bullets: section.bullets.map(String).slice(0, 6),
+          }))
+      : [];
+
+    if (!raw.title || !raw.summary || sections.length === 0) return null;
+
+    return {
+      mode: scanMode,
+      title: String(raw.title),
+      subtitle: String(raw.subtitle || getARModeConfig(scanMode).description),
+      confidence: typeof raw.confidence === 'number' ? Math.round(raw.confidence) : undefined,
+      isMock: false,
+      summary: String(raw.summary),
+      sections,
+      disclaimer: raw.disclaimer ? String(raw.disclaimer) : undefined,
+      extractedText: raw.extractedText || raw.extracted_text ? String(raw.extractedText || raw.extracted_text) : undefined,
+      essay: raw.essay ? String(raw.essay) : undefined,
+    };
+  };
+
+  const runARScan = async (uri: string, mimeType = 'image/jpeg') => {
+    const totalStart = Date.now();
+    const stepDelay = (step: ARLoadingStep, duration = 280) =>
+      new Promise<void>((resolve) => {
+        setARLoadingStep(step);
+        setTimeout(resolve, duration);
+      });
+
+    setCapturedImage(uri);
+    setIsProcessing(true);
+    setAnalysisResult(null);
+
+    try {
+      console.log('[AR Scan] image preparation started');
+      await stepDelay('Preparing image');
+
+      if (!mimeType.startsWith('image/')) {
+        throw new Error('Unsupported image type. Please choose a photo.');
+      }
+
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        if (blob.size > 10 * 1024 * 1024) {
+          throw new Error('Image is too large. Please choose an image under 10MB.');
+        }
+        formData.append('file', blob, `ar-${arScanMode}.${blob.type.includes('png') ? 'png' : 'jpg'}`);
+      } else {
+        formData.append('file', { uri, name: `ar-${arScanMode}.jpg`, type: mimeType } as any);
+      }
+
+      formData.append('target', targetLanguage);
+      formData.append('mode', 'ar');
+      formData.append('ar_scan_mode', arScanMode);
+      console.log('[AR Scan] image preparation completed in', Date.now() - totalStart, 'ms');
+
+      await stepDelay('Uploading');
+      await stepDelay('Analysing');
+
+      let arResult: ARScanResultBase | null = null;
+      if (arEndpointName) {
+        const apiStart = Date.now();
+        const { data, error } = await callEdgeFunction<any>(arEndpointName, formData);
+        console.log('[AR Scan] AI processing completed in', Date.now() - apiStart, 'ms');
+        if (error) throw error;
+        arResult = normalizeARResult(data, arScanMode);
+        if (!arResult) {
+          console.error('[AR Scan] Invalid structured response:', data);
+          throw new Error('Invalid AR analysis response. Please try again.');
+        }
+      } else if (isDevelopmentBuild) {
+        await stepDelay('Identifying');
+        arResult = createMockARResult(arScanMode);
+      } else {
+        throw new Error('AR analysis is not configured yet.');
+      }
+
+      await stepDelay('Preparing results');
+      console.log('[AR Scan] result rendering ready in', Date.now() - totalStart, 'ms');
+
+      setAnalysisResult({
+        originalText: arResult.title,
+        translatedText: arResult.essay || arResult.summary,
+        analysis: arResult.summary,
+        arResult,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      console.error('[AR Scan] Failed:', err);
+      setAnalysisResult(null);
+      Alert.alert('AR Scan Failed', err?.message || 'Could not analyse this image. Please retake and try again.');
+    } finally {
+      console.log('[AR Scan] total time', Date.now() - totalStart, 'ms');
+      setIsProcessing(false);
+    }
+  };
 
   // Load Scan History from Supabase
   const { data: pastScans, refetch: refetchPastScans } = useQuery<PastScanSession[]>({
@@ -297,6 +634,7 @@ export default function CameraScreen() {
         fat?: string | null;
       }>;
     };
+    arResult?: ARScanResultBase;
     ocrBoxes?: Array<{ text: string; translated: string; x: number; y: number; w: number; h: number }>;
   } | null>(null);
 
@@ -321,6 +659,11 @@ export default function CameraScreen() {
 
   // Run image processing via Edge Function calling OpenRouter
   const processImage = async (uri: string, mimeType = 'image/jpeg') => {
+    if (mode === 'ar') {
+      await runARScan(uri, mimeType);
+      return;
+    }
+
     if (!(await ensureSignedIn())) {
       setIsProcessing(false);
       return;
@@ -515,6 +858,7 @@ export default function CameraScreen() {
               : 'Idle';
 
   const renderTranslatedAudioControls = () => {
+    if (mode === 'ar') return null;
     if (!analysisResult?.translatedText) return null;
 
     return (
@@ -1032,6 +1376,237 @@ export default function CameraScreen() {
     return result;
   };
 
+  const getARResultText = (result: ARScanResultBase) => {
+    const sectionText = result.sections
+      .map((section) => `${section.title}\n${section.bullets.map((bullet) => `- ${bullet}`).join('\n')}`)
+      .join('\n\n');
+    return [
+      `YSnap AR Scan - ${getARModeConfig(result.mode).label}`,
+      `Date: ${new Date().toLocaleString()}`,
+      `Result: ${result.title}`,
+      `Confidence: ${result.confidence ? `${result.confidence}%` : 'Uncertain'}`,
+      result.isMock ? 'Status: Development mock data' : 'Status: Live analysis',
+      '',
+      result.subtitle,
+      result.summary,
+      result.extractedText ? `\nExtracted text:\n${result.extractedText}` : '',
+      result.essay ? `\nEssay draft:\n${result.essay}` : '',
+      '',
+      sectionText,
+      result.disclaimer ? `\nSafety note:\n${result.disclaimer}` : '',
+    ].filter(Boolean).join('\n');
+  };
+
+  const handleCopyARResult = (result: ARScanResultBase) => {
+    Clipboard.setString(getARResultText(result));
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert('Copied', 'AR scan result copied.');
+  };
+
+  const handleShareARResult = async (result: ARScanResultBase) => {
+    try {
+      await Share.share({ message: getARResultText(result), title: `YSnap ${getARModeConfig(result.mode).label}` });
+    } catch {
+      Alert.alert('Share Failed', 'Could not open the share sheet.');
+    }
+  };
+
+  const handleDownloadARResult = (result: ARScanResultBase) => {
+    const text = getARResultText(result);
+    const filename = `ysnap-${sanitizeFilenamePart(result.mode)}-${new Date().toISOString().slice(0, 10)}.txt`;
+
+    if (Platform.OS === 'web') {
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      Alert.alert('Downloaded', `${filename} was created.`);
+    } else {
+      Alert.alert('Download Ready', 'Text file download is available on web. Use Copy or Share on this device.');
+    }
+  };
+
+  const getARSaveKey = (result: ARScanResultBase) =>
+    `${result.mode}:${result.title}:${result.summary}`.toLowerCase();
+
+  const handleSaveARResult = (result: ARScanResultBase) => {
+    const key = getARSaveKey(result);
+    if (savedARScans.includes(key)) {
+      Alert.alert('Already Saved', 'This AR scan is already saved locally.');
+      return;
+    }
+
+    const next = [...savedARScans, key];
+    setSavedARScans(next);
+    if (Platform.OS === 'web') {
+      try {
+        const existing = JSON.parse(localStorage.getItem('ysnap.arScanHistory') || '[]');
+        localStorage.setItem('ysnap.arScanHistory', JSON.stringify([
+          { id: key, savedAt: new Date().toISOString(), result },
+          ...existing.filter((item: any) => item?.id !== key),
+        ].slice(0, 50)));
+      } catch (error) {
+        console.error('[AR Scan] Failed to save local scan:', error);
+        Alert.alert('Save Failed', 'Could not save this scan locally.');
+        return;
+      }
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert('Saved', 'AR scan saved locally.');
+  };
+
+  const handleEssayRefine = (action: string) => {
+    Alert.alert('Essay Tool', `${action} will use the configured AR analysis endpoint when Gemini is connected.`);
+  };
+
+  const renderARModeSelector = (compact = false) => (
+    <View style={[styles.arSelectedModeWrap, compact && styles.arSelectedModeWrapCompact]}>
+      <TouchableOpacity
+        activeOpacity={0.88}
+        style={styles.arSelectedModeControl}
+        onPress={() => {
+          Haptics.selectionAsync();
+          setShowARModePicker(true);
+        }}
+      >
+        {(() => {
+          const activeMode = getARModeConfig(arScanMode);
+          return (
+            <>
+              <View style={[styles.arSelectedIcon, { backgroundColor: `${activeMode.accent}18` }]}>
+                <Ionicons name={activeMode.icon} size={22} color={activeMode.accent} />
+              </View>
+              <View style={styles.arSelectedTextCol}>
+                <Text style={styles.arSelectedTitle}>{activeMode.label}</Text>
+                <Text style={styles.arSelectedDesc} numberOfLines={1}>{activeMode.description}</Text>
+              </View>
+              <View style={styles.arSelectedChevron}>
+                <Ionicons name="chevron-down" size={20} color="#1A1A1C" />
+              </View>
+            </>
+          );
+        })()}
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderARScanResult = (result: ARScanResultBase) => {
+    const config = getARModeConfig(result.mode);
+    const isSaved = savedARScans.includes(getARSaveKey(result));
+
+    return (
+      <View style={styles.arResultWrapper}>
+        <View style={[styles.arHeroCard, { borderColor: `${config.accent}33` }]}>
+          <View style={styles.arHeroTopRow}>
+            <View style={[styles.arHeroIcon, { backgroundColor: `${config.accent}18` }]}>
+              <Ionicons name={config.icon} size={26} color={config.accent} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.arHeroEyebrow}>{config.label}</Text>
+              <Text style={styles.arHeroTitle}>{result.title}</Text>
+              <Text style={styles.arHeroSubtitle}>{result.subtitle}</Text>
+            </View>
+            {typeof result.confidence === 'number' ? (
+              <View style={[styles.arConfidenceBadge, { borderColor: `${config.accent}44` }]}>
+                <Text style={[styles.arConfidenceValue, { color: config.accent }]}>{result.confidence}%</Text>
+                <Text style={styles.arConfidenceLabel}>confidence</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {result.isMock ? (
+            <View style={styles.mockNotice}>
+              <Ionicons name="construct-outline" size={15} color="#7C6CD0" />
+              <Text style={styles.mockNoticeText}>Development mock data — real Gemini AR analysis is not configured yet.</Text>
+            </View>
+          ) : null}
+
+          <Text style={styles.arSummaryText}>{result.summary}</Text>
+        </View>
+
+        {result.mode === 'essay' ? (
+          <View style={styles.arSectionCard}>
+            <View style={styles.arSectionHeader}>
+              <Ionicons name="document-text-outline" size={18} color={config.accent} />
+              <Text style={styles.arSectionTitle}>Extracted text + essay draft</Text>
+            </View>
+            <Text style={styles.arExtractedText}>{result.extractedText}</Text>
+            <TextInput
+              style={styles.arEssayInput}
+              multiline
+              value={result.essay}
+              editable={false}
+              placeholder="Generated essay will appear here"
+              placeholderTextColor="#A0AEC0"
+            />
+            <View style={styles.arRefineGrid}>
+              {['Improve clarity', 'Improve fluency', 'Shorten', 'Expand', 'Simplify', 'Change tone'].map((action) => (
+                <TouchableOpacity key={action} style={styles.arRefineChip} onPress={() => handleEssayRefine(action)}>
+                  <Text style={styles.arRefineChipText}>{action}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {result.sections.map((section, index) => (
+          <View key={`${section.title}-${index}`} style={styles.arSectionCard}>
+            <View style={styles.arSectionHeader}>
+              <View style={[styles.arSectionIcon, { backgroundColor: `${section.accent}14` }]}>
+                <Ionicons name={section.icon} size={16} color={section.accent} />
+              </View>
+              <Text style={styles.arSectionTitle}>{section.title}</Text>
+            </View>
+            {section.bullets.map((bullet, bulletIndex) => (
+              <View key={`${bullet}-${bulletIndex}`} style={styles.arBulletRow}>
+                <View style={[styles.arBulletDot, { backgroundColor: section.accent }]} />
+                <Text style={styles.arBulletText}>{bullet}</Text>
+              </View>
+            ))}
+          </View>
+        ))}
+
+        {result.disclaimer ? (
+          <View style={styles.arDisclaimerCard}>
+            <Ionicons name="alert-circle-outline" size={18} color="#D97706" />
+            <Text style={styles.arDisclaimerText}>{result.disclaimer}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.cardQuickActions}>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => handleSaveARResult(result)}>
+            <Ionicons name={isSaved ? 'checkmark-circle' : 'bookmark-outline'} size={16} color={colors.accentBlue} />
+            <Text style={styles.quickActionBtnTxt}>{isSaved ? 'Saved' : 'Save'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => handleCopyARResult(result)}>
+            <Ionicons name="copy-outline" size={16} color={colors.accentBlue} />
+            <Text style={styles.quickActionBtnTxt}>Copy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => handleShareARResult(result)}>
+            <Ionicons name="share-social-outline" size={16} color={colors.accentBlue} />
+            <Text style={styles.quickActionBtnTxt}>Share</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.cardQuickActions}>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={() => handleDownloadARResult(result)}>
+            <Ionicons name="download-outline" size={16} color={colors.accentBlue} />
+            <Text style={styles.quickActionBtnTxt}>Download</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickActionBtn} onPress={handleReset}>
+            <Ionicons name="camera-outline" size={16} color={colors.accentBlue} />
+            <Text style={styles.quickActionBtnTxt}>New Scan</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   if (!permission) {
     return (
       <View style={styles.centeredContainer}>
@@ -1107,7 +1682,7 @@ export default function CameraScreen() {
             </View>
 
             {/* Mode selection overlay on viewfinder */}
-            <View style={styles.modeRowOverlay}>
+            <View style={[styles.modeRowOverlay, mode === 'ar' && styles.modeRowOverlayWithARSelector]}>
               {(['ocr', 'food', 'menu', 'ar'] as CameraMode[]).map((m) => (
                 <TouchableOpacity
                   key={m}
@@ -1132,7 +1707,6 @@ export default function CameraScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-
             {/* Capture controls overlay on viewfinder */}
             <View style={styles.captureFooter}>
               <TouchableOpacity style={styles.galleryBtn} onPress={handlePickImage}>
@@ -1146,6 +1720,7 @@ export default function CameraScreen() {
               <View style={styles.spacerBtn} />
             </View>
           </CameraView>
+          {mode === 'ar' ? renderARModeSelector(true) : null}
         </View>
       ) : null}
 
@@ -1164,7 +1739,8 @@ export default function CameraScreen() {
             ]} 
           />
           <ActivityIndicator size="large" color="#FFFFFF" />
-          <Text style={styles.processingText}>AI Analyzing...</Text>
+          <Text style={styles.processingText}>{mode === 'ar' ? arLoadingStep : 'AI Analyzing...'}</Text>
+          {mode === 'ar' ? <Text style={styles.processingSubText}>{getARModeConfig(arScanMode).label}</Text> : null}
         </View>
       )}
 
@@ -1487,19 +2063,13 @@ export default function CameraScreen() {
               {/* Mode 4: AR Scanner Charts */}
               {mode === 'ar' && (
                 <View style={styles.chartDashboardCard}>
-                  <Text style={styles.dashboardTitle}>AR Space Profile</Text>
-                  <Text style={styles.dashboardSubtitle}>Estimated object depth coordinates</Text>
-
-                  {/* Spatial Dimensions Estimate */}
-                  <ARDimensionsChart />
-
-                  {/* Simple text details */}
-                  <View style={styles.divider} />
-                  <View style={styles.textBlock}>
-                    <Text style={styles.textBlockTitle}>AI OBJECT TRANSLATION</Text>
-                    <Text style={styles.translatedTextContent}>{analysisResult.translatedText}</Text>
-                    <Text style={[styles.dictatedText, { fontSize: 13, marginTop: 4 }]}>Original: {analysisResult.originalText}</Text>
-                  </View>
+                  {renderARModeSelector()}
+                  {analysisResult.arResult ? renderARScanResult(analysisResult.arResult) : (
+                    <View style={styles.arDisclaimerCard}>
+                      <Ionicons name="alert-circle-outline" size={18} color="#D97706" />
+                      <Text style={styles.arDisclaimerText}>AR analysis is not configured yet.</Text>
+                    </View>
+                  )}
                 </View>
               )}
 
@@ -1692,6 +2262,56 @@ export default function CameraScreen() {
         </View>
       </Modal>
 
+      <Modal
+        visible={showARModePicker}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowARModePicker(false)}
+      >
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.arPickerBackdrop}
+          onPress={() => setShowARModePicker(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.arPickerPanel}>
+            <View style={styles.arPickerHandle} />
+            <View style={styles.arPickerHeader}>
+              <View>
+                <Text style={styles.arPickerTitle}>Choose AR Scan</Text>
+                <Text style={styles.arPickerSubtitle}>Pick what YSnap should identify</Text>
+              </View>
+              <TouchableOpacity style={styles.arPickerClose} onPress={() => setShowARModePicker(false)}>
+                <Ionicons name="close" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            {AR_SCAN_MODES.map((scanMode) => {
+              const selected = arScanMode === scanMode.id;
+              return (
+                <TouchableOpacity
+                  key={scanMode.id}
+                  style={[styles.arPickerOption, selected && styles.arPickerOptionActive]}
+                  onPress={() => {
+                    Haptics.selectionAsync();
+                    setARScanMode(scanMode.id);
+                    setShowARModePicker(false);
+                  }}
+                >
+                  <View style={[styles.arPickerOptionIcon, { backgroundColor: `${scanMode.accent}22` }]}>
+                    <Ionicons name={scanMode.icon} size={21} color={scanMode.accent} />
+                  </View>
+                  <View style={styles.arPickerOptionText}>
+                    <Text style={styles.arPickerOptionTitle}>{scanMode.label}</Text>
+                    <Text style={styles.arPickerOptionDesc}>{scanMode.description}</Text>
+                  </View>
+                  {selected ? <Ionicons name="checkmark" size={24} color={colors.accentBlue} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -1813,6 +2433,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
     marginTop: spacing.md,
+  },
+  processingSubText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.7)',
+    marginTop: 6,
   },
   scanningLaserLine: {
     position: 'absolute',
@@ -2149,6 +2775,9 @@ const styles = StyleSheet.create({
     borderColor: '#ECEEF1',
     zIndex: 10,
   },
+  modeRowOverlayWithARSelector: {
+    bottom: 218,
+  },
   modeTab: {
     flex: 1,
     flexDirection: 'row',
@@ -2169,6 +2798,349 @@ const styles = StyleSheet.create({
   modeTabTextActive: {
     color: '#1A1A1C',
     fontWeight: '800',
+  },
+  arSelectedModeWrap: {
+    marginBottom: spacing.md,
+  },
+  arSelectedModeWrapCompact: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 132,
+    zIndex: 80,
+    marginBottom: 0,
+  },
+  arSelectedModeControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.7)',
+    padding: 12,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  arSelectedIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arSelectedTextCol: {
+    flex: 1,
+  },
+  arSelectedTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#111114',
+  },
+  arSelectedDesc: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: 'rgba(0,0,0,0.52)',
+    marginTop: 2,
+  },
+  arSelectedChevron: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#F1F3F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arPickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  arPickerPanel: {
+    backgroundColor: 'rgba(29,29,31,0.94)',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    padding: 18,
+    paddingBottom: 22,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.42,
+    shadowRadius: 34,
+    elevation: 12,
+  },
+  arPickerHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+    marginBottom: 14,
+  },
+  arPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  arPickerTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  arPickerSubtitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.48)',
+    marginTop: 3,
+  },
+  arPickerClose: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arPickerOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  arPickerOptionActive: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    borderBottomColor: 'transparent',
+    marginVertical: 2,
+  },
+  arPickerOptionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arPickerOptionText: {
+    flex: 1,
+  },
+  arPickerOptionTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  arPickerOptionDesc: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.48)',
+    marginTop: 3,
+  },
+  arResultWrapper: {
+    gap: 10,
+  },
+  arHeroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 16,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+    elevation: 3,
+  },
+  arHeroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  arHeroIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arHeroEyebrow: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    color: 'rgba(0,0,0,0.42)',
+    textTransform: 'uppercase',
+  },
+  arHeroTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#111114',
+    marginTop: 2,
+  },
+  arHeroSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(0,0,0,0.52)',
+    marginTop: 3,
+  },
+  arConfidenceBadge: {
+    minWidth: 62,
+    borderRadius: 16,
+    borderWidth: 1,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  arConfidenceValue: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  arConfidenceLabel: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: 'rgba(0,0,0,0.38)',
+    textTransform: 'uppercase',
+  },
+  mockNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(124,108,208,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,108,208,0.16)',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 14,
+  },
+  mockNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#5F52B8',
+  },
+  arSummaryText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#4A5568',
+    fontWeight: '600',
+    marginTop: 12,
+  },
+  arSectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    padding: 14,
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.04,
+    shadowRadius: 14,
+    elevation: 1,
+  },
+  arSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  arSectionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arSectionTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#1A1A1C',
+    flex: 1,
+  },
+  arBulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+    gap: 8,
+  },
+  arBulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 6,
+  },
+  arBulletText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: '#4A5568',
+    fontWeight: '600',
+  },
+  arDisclaimerCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 16,
+    padding: 12,
+  },
+  arDisclaimerText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 16,
+    color: '#92400E',
+    fontWeight: '700',
+  },
+  arExtractedText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#1A1A1C',
+    fontWeight: '700',
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    padding: 12,
+    marginBottom: 10,
+  },
+  arEssayInput: {
+    minHeight: 150,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    textAlignVertical: 'top',
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#1A1A1C',
+    fontWeight: '500',
+  },
+  arRefineGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  arRefineChip: {
+    backgroundColor: 'rgba(91,141,239,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(91,141,239,0.18)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  arRefineChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.accentBlue,
   },
   historyOverlayContainer: {
     ...StyleSheet.absoluteFillObject,

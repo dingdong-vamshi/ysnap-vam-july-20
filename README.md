@@ -33,11 +33,15 @@ Fill in your client-safe Supabase credentials (never commit this file):
 - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: Your Supabase Anon/Publishable Key
 - `EXPO_PUBLIC_APP_URL`: Local application URL (default: `http://localhost:8081`)
 - `EXPO_PUBLIC_AUTH_CALLBACK_PATH`: Auth callback path (default: `/auth/callback`)
+- `EXPO_PUBLIC_AR_SCAN_ENDPOINT`: Optional Supabase Edge Function name for structured AR Scan analysis. Leave blank locally to use clearly marked development mock results.
+- `EXPO_PUBLIC_CALORIE_SCAN_ENDPOINT`: Optional Supabase Edge Function name for Calorie Tracker food-image analysis. Leave blank locally to use clearly marked development mock results.
 
 ### Server-Side Secrets
 ElevenLabs voice generation and AI translation features rely on secrets configured in the remote Supabase project. These keys are kept secure and are **never** included in the repository or exposed to the Expo client app:
 - `ELEVENLABS_API_KEY`: Remote secret configured in Supabase Edge Functions.
 - `GEMINI_API_KEY`: Remote Google AI secret used by the `gemini-3.5-flash` translation, summary, and vision pipelines.
+
+AR Scan and Calorie Tracker use the client → secure Supabase Edge Function/backend → Gemini API pattern. Keep `GEMINI_API_KEY` server-side only; never add it as an `EXPO_PUBLIC_` variable.
 
 ## Development
 

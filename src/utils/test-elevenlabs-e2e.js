@@ -2,14 +2,18 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-const supabaseUrl = 'https://jstylllvekaqibooizbl.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzdHlsbGx2ZWthcWlib29pemJsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3Nzk1OTcsImV4cCI6MjA5OTM1NTU5N30.c65FFyVI--ia19Uo_An14YEGsgAGQvQVqBUywViS8Pw';
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY before running this test.');
+}
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: { persistSession: false }
 });
 
-const artifactsDir = '/Users/vamshipendyala/.gemini/antigravity-ide/brain/5d15546a-ce5f-4e66-bcc7-2b26acbd4096/artifacts/qa/navbar-icons-elevenlabs';
+const artifactsDir = process.env.ELEVENLABS_E2E_ARTIFACTS_DIR || path.join(process.cwd(), 'tmp', 'elevenlabs-e2e');
 
 // Create artifacts dir if not exists
 if (!fs.existsSync(artifactsDir)) {
@@ -18,8 +22,12 @@ if (!fs.existsSync(artifactsDir)) {
 
 async function runTest() {
   console.log('--- STARTING ELEVENLABS E2E TEST ---');
-  const email = 'test-direct-sql@gmail.com';
-  const password = 'Password123!';
+  const email = process.env.ELEVENLABS_E2E_EMAIL;
+  const password = process.env.ELEVENLABS_E2E_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('Set ELEVENLABS_E2E_EMAIL and ELEVENLABS_E2E_PASSWORD before running this test.');
+  }
 
   console.log('Skipping sign up (pre-inserted direct SQL test user)...');
 
