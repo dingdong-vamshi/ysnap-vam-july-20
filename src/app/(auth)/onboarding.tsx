@@ -294,14 +294,16 @@ function FloatingIcon({
   tone,
   style,
   size = 26,
+  muted = false,
 }: {
   icon: string;
   tone: string;
   style: any;
   size?: number;
+  muted?: boolean;
 }) {
   return (
-    <View style={[styles.floatingIcon, style]}>
+    <View style={[styles.floatingIcon, muted && styles.floatingIconMuted, style]}>
       <Ionicons name={icon as any} size={size} color={tone} />
     </View>
   );
@@ -310,25 +312,37 @@ function FloatingIcon({
 function CameraTranslationHero({ compact }: { compact: boolean }) {
   return (
     <View style={[styles.cameraHero, compact && styles.cameraHeroCompact]}>
+      <View style={styles.cameraOrbitOuter} />
+      <View style={styles.cameraOrbitInner} />
       <View style={styles.heroHalo} />
-      <FloatingIcon icon="mic-outline" tone={accent} style={styles.floatMic} />
-      <FloatingIcon icon="language-outline" tone={accent} style={styles.floatLanguage} />
-      <FloatingIcon icon="document-text-outline" tone={colors.textPrimary} style={styles.floatDoc} />
-      <FloatingIcon icon="chatbubbles-outline" tone={purple} style={styles.floatChat} />
-      <FloatingIcon icon="scan-outline" tone={colors.accentGreen} style={styles.floatScan} />
+      <View style={styles.heroSparkleOne} />
+      <View style={styles.heroSparkleTwo} />
+      <FloatingIcon icon="mic-outline" tone={accent} style={styles.floatMic} size={compact ? 22 : 25} />
+      <FloatingIcon icon="language-outline" tone={accent} style={styles.floatLanguage} size={compact ? 22 : 25} />
+      <FloatingIcon icon="document-text-outline" tone={colors.textPrimary} style={styles.floatDoc} size={compact ? 21 : 24} muted />
+      <FloatingIcon icon="chatbubbles-outline" tone={purple} style={styles.floatChat} size={compact ? 22 : 25} />
+      <FloatingIcon icon="scan-outline" tone={colors.accentGreen} style={styles.floatScan} size={compact ? 22 : 25} />
 
       <View style={styles.cameraPlatform}>
-        <View style={styles.cameraBody}>
+        <View style={styles.cameraCastShadow} />
+        <LinearGradient colors={['#FFFFFF', '#F7F8FC', '#ECEEF5']} style={styles.cameraBody}>
+          <View style={styles.cameraBodyHighlight} />
           <View style={styles.cameraTop} />
+          <View style={styles.cameraTopButton} />
+          <View style={styles.cameraShutter} />
           <View style={styles.cameraGripLeft} />
           <View style={styles.cameraGripRight} />
-          <View style={styles.lensOuter}>
-            <LinearGradient colors={['#0D0E12', '#222633']} style={styles.lensMiddle}>
+          <LinearGradient colors={['#101116', '#292B35']} style={styles.lensOuter}>
+            <View style={styles.lensChromeRing} />
+            <LinearGradient colors={['#11131A', '#252A3A', '#050609']} style={styles.lensMiddle}>
               <View style={styles.lensBlueRing} />
-              <View style={styles.lensCore} />
+              <LinearGradient colors={['#74BAFF', '#1B5FFF', '#0B1638']} style={styles.lensCore}>
+                <View style={styles.lensCatchLightLarge} />
+                <View style={styles.lensCatchLightSmall} />
+              </LinearGradient>
             </LinearGradient>
-          </View>
-        </View>
+          </LinearGradient>
+        </LinearGradient>
       </View>
     </View>
   );
@@ -387,10 +401,18 @@ function PhoneVisionHero({ compact }: { compact: boolean }) {
           <View style={styles.focusBottomLeft} />
           <View style={styles.focusBottomRight} />
           <View style={styles.previewObject}>
-            <View style={styles.previewLeafOne} />
-            <View style={styles.previewLeafTwo} />
-            <View style={styles.previewLeafThree} />
-            <View style={styles.previewPot} />
+            <View style={styles.plantStemPrimary} />
+            <View style={styles.plantStemLeft} />
+            <View style={styles.plantStemRight} />
+            <LinearGradient colors={['#6ED47F', '#2F9048']} style={[styles.realLeaf, styles.realLeafOne]} />
+            <LinearGradient colors={['#75DA87', '#379D51']} style={[styles.realLeaf, styles.realLeafTwo]} />
+            <LinearGradient colors={['#5DCB71', '#267B3C']} style={[styles.realLeaf, styles.realLeafThree]} />
+            <LinearGradient colors={['#84E094', '#3AA456']} style={[styles.realLeafSmall, styles.realLeafFour]} />
+            <LinearGradient colors={['#7ADC8C', '#348F4D']} style={[styles.realLeafSmall, styles.realLeafFive]} />
+            <LinearGradient colors={['#FFFFFF', '#EEF0F3']} style={styles.previewPot}>
+              <View style={styles.previewPotLip} />
+              <View style={styles.previewPotShadow} />
+            </LinearGradient>
           </View>
           <View style={styles.translationBubble}>
             <Text style={styles.translationBubbleText}>Translate</Text>
@@ -477,9 +499,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   skipText: {
-    fontSize: 17,
+    fontSize: 16,
     lineHeight: 22,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.textPrimary,
     letterSpacing: -0.2,
   },
@@ -522,16 +544,16 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   headline: {
-    fontSize: 42,
-    lineHeight: 47,
-    fontWeight: '900',
-    letterSpacing: -1.25,
+    fontSize: 39,
+    lineHeight: 44,
+    fontWeight: '800',
+    letterSpacing: -1.05,
     color: colors.textPrimary,
   },
   headlineCompact: {
-    fontSize: 34,
-    lineHeight: 39,
-    letterSpacing: -0.9,
+    fontSize: 31,
+    lineHeight: 36,
+    letterSpacing: -0.7,
   },
   headlineAccent: {
     color: accent,
@@ -559,21 +581,22 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   bodyText: {
-    fontSize: 18,
-    lineHeight: 28,
-    fontWeight: '600',
+    fontSize: 17,
+    lineHeight: 27,
+    fontWeight: '500',
     color: '#62636A',
     letterSpacing: -0.15,
     maxWidth: 340,
   },
   bodyTextSmall: {
-    fontSize: 15,
-    lineHeight: 23,
+    fontSize: 14,
+    lineHeight: 22,
   },
   visualArea: {
     flex: 1,
     minHeight: 0,
     justifyContent: 'center',
+    overflow: 'visible',
   },
   visualAreaSmall: {
     flex: 0.94,
@@ -630,9 +653,9 @@ const styles = StyleSheet.create({
 
   floatingIcon: {
     position: 'absolute',
-    width: 62,
-    height: 62,
-    borderRadius: 20,
+    width: 58,
+    height: 58,
+    borderRadius: 19,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#ECECF1',
@@ -640,9 +663,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: '#0D0E12',
     shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.09,
+    shadowOpacity: 0.1,
     shadowRadius: 24,
     elevation: 5,
+  },
+  floatingIconMuted: {
+    opacity: 0.86,
+    transform: [{ scale: 0.92 }],
   },
   cameraHero: {
     minHeight: 336,
@@ -650,22 +677,63 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   cameraHeroCompact: {
-    minHeight: 258,
-    transform: [{ scale: 0.9 }],
+    minHeight: 250,
+    transform: [{ scale: 0.86 }],
+  },
+  cameraOrbitOuter: {
+    position: 'absolute',
+    bottom: 18,
+    width: '82%',
+    height: 230,
+    borderRadius: 150,
+    borderWidth: 1.5,
+    borderColor: 'rgba(24,119,242,0.12)',
+    transform: [{ rotate: '-7deg' }],
+  },
+  cameraOrbitInner: {
+    position: 'absolute',
+    bottom: 48,
+    width: '66%',
+    height: 160,
+    borderRadius: 120,
+    borderWidth: 1,
+    borderColor: 'rgba(124,108,208,0.12)',
+    transform: [{ rotate: '8deg' }],
   },
   heroHalo: {
     position: 'absolute',
-    bottom: 10,
-    width: 270,
-    height: 164,
+    bottom: 2,
+    width: '86%',
+    maxWidth: 320,
+    height: 178,
     borderRadius: 140,
     backgroundColor: 'rgba(24,119,242,0.08)',
   },
-  floatMic: { top: 8, left: '44%', transform: [{ rotate: '5deg' }] },
-  floatLanguage: { top: 78, right: 22, transform: [{ rotate: '12deg' }] },
-  floatDoc: { top: 154, right: 10, transform: [{ rotate: '10deg' }] },
-  floatChat: { top: 130, left: 24, transform: [{ rotate: '-12deg' }] },
-  floatScan: { top: 76, left: 92, transform: [{ rotate: '8deg' }] },
+  heroSparkleOne: {
+    position: 'absolute',
+    top: 72,
+    right: '21%',
+    width: 8,
+    height: 8,
+    borderRadius: 2,
+    backgroundColor: '#D9E6FF',
+    transform: [{ rotate: '45deg' }],
+  },
+  heroSparkleTwo: {
+    position: 'absolute',
+    top: 138,
+    left: '21%',
+    width: 6,
+    height: 6,
+    borderRadius: 2,
+    backgroundColor: '#EFEAFF',
+    transform: [{ rotate: '45deg' }],
+  },
+  floatMic: { top: '2%', left: '44%', transform: [{ rotate: '4deg' }] },
+  floatLanguage: { top: '23%', right: '8%', transform: [{ rotate: '10deg' }] },
+  floatDoc: { top: '49%', right: '4%', transform: [{ rotate: '9deg' }] },
+  floatChat: { top: '43%', left: '7%', transform: [{ rotate: '-10deg' }] },
+  floatScan: { top: '23%', left: '25%', transform: [{ rotate: '7deg' }] },
   cameraPlatform: {
     width: '92%',
     maxWidth: 360,
@@ -681,21 +749,39 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.14,
     shadowRadius: 28,
   },
+  cameraCastShadow: {
+    position: 'absolute',
+    bottom: 38,
+    width: 230,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: 'rgba(10,11,18,0.16)',
+    transform: [{ scaleX: 1.08 }],
+  },
   cameraBody: {
     width: 252,
     height: 138,
     marginBottom: 30,
     borderRadius: 28,
-    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E7E8EE',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
     shadowColor: '#0D0E12',
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.15,
     shadowRadius: 30,
     elevation: 8,
+  },
+  cameraBodyHighlight: {
+    position: 'absolute',
+    top: 9,
+    left: 22,
+    right: 22,
+    height: 28,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.76)',
   },
   cameraTop: {
     position: 'absolute',
@@ -708,6 +794,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E7E8EE',
   },
+  cameraTopButton: {
+    position: 'absolute',
+    top: -25,
+    left: 58,
+    width: 38,
+    height: 11,
+    borderRadius: 7,
+    backgroundColor: '#20222A',
+  },
+  cameraShutter: {
+    position: 'absolute',
+    top: 16,
+    right: 48,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#16171D',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#0D0E12',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.13,
+    shadowRadius: 8,
+  },
   cameraGripLeft: {
     position: 'absolute',
     left: 18,
@@ -715,7 +825,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 78,
     borderRadius: 15,
-    backgroundColor: '#121318',
+    backgroundColor: '#15161C',
+    borderWidth: 1,
+    borderColor: '#2A2C35',
   },
   cameraGripRight: {
     position: 'absolute',
@@ -724,17 +836,30 @@ const styles = StyleSheet.create({
     width: 48,
     height: 78,
     borderRadius: 15,
-    backgroundColor: '#121318',
+    backgroundColor: '#15161C',
+    borderWidth: 1,
+    borderColor: '#2A2C35',
   },
   lensOuter: {
     width: 118,
     height: 118,
     borderRadius: 59,
-    backgroundColor: '#17181E',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 7,
-    borderColor: '#262832',
+    borderColor: '#333643',
+    shadowColor: '#0D0E12',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+  },
+  lensChromeRing: {
+    position: 'absolute',
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   lensMiddle: {
     width: 82,
@@ -756,10 +881,33 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   lensCore: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#55A2FF',
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: accent,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.38,
+    shadowRadius: 14,
+  },
+  lensCatchLightLarge: {
+    position: 'absolute',
+    top: 8,
+    left: 9,
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.82)',
+  },
+  lensCatchLightSmall: {
+    position: 'absolute',
+    right: 8,
+    bottom: 10,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.56)',
   },
   benefitsRow: {
     flexDirection: 'row',
@@ -875,10 +1023,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(24,119,242,0.045)',
   },
   phoneLang: { left: 18, top: 70, transform: [{ rotate: '-10deg' }] },
-  phoneLeaf: { right: 22, top: 48, transform: [{ rotate: '12deg' }] },
-  phoneMath: { right: 12, bottom: 86, transform: [{ rotate: '10deg' }] },
-  phoneGlobe: { right: 74, bottom: 8 },
-  phonePaper: { left: 42, bottom: 50, transform: [{ rotate: '-8deg' }] },
+  phoneLeaf: { right: '7%', top: '11%', transform: [{ rotate: '12deg' }, { scale: 0.96 }] },
+  phoneMath: { right: '5%', bottom: '24%', transform: [{ rotate: '10deg' }, { scale: 0.92 }] },
+  phoneGlobe: { right: '24%', bottom: '2%', transform: [{ scale: 0.9 }] },
+  phonePaper: { left: '12%', bottom: '16%', transform: [{ rotate: '-8deg' }, { scale: 0.9 }] },
   phoneTilt: {
     width: 200,
     height: 292,
@@ -906,52 +1054,130 @@ const styles = StyleSheet.create({
   phoneScreen: {
     flex: 1,
     borderRadius: 26,
-    backgroundColor: '#EEF2F8',
+    backgroundColor: '#EEF3F8',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
   previewObject: {
-    width: 110,
-    height: 125,
+    width: 118,
+    height: 138,
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
-  previewLeafOne: {
+  plantStemPrimary: {
+    position: 'absolute',
+    bottom: 48,
+    width: 4,
+    height: 78,
+    borderRadius: 4,
+    backgroundColor: '#3C8B47',
+  },
+  plantStemLeft: {
     position: 'absolute',
     bottom: 56,
-    left: 22,
-    width: 40,
-    height: 66,
-    borderRadius: 36,
-    backgroundColor: '#47A05F',
-    transform: [{ rotate: '-32deg' }],
+    left: 48,
+    width: 3,
+    height: 58,
+    borderRadius: 3,
+    backgroundColor: '#3F944D',
+    transform: [{ rotate: '-26deg' }],
   },
-  previewLeafTwo: {
-    position: 'absolute',
-    bottom: 68,
-    width: 45,
-    height: 74,
-    borderRadius: 40,
-    backgroundColor: '#4FB56B',
-  },
-  previewLeafThree: {
+  plantStemRight: {
     position: 'absolute',
     bottom: 56,
-    right: 20,
+    right: 48,
+    width: 3,
+    height: 58,
+    borderRadius: 3,
+    backgroundColor: '#3F944D',
+    transform: [{ rotate: '26deg' }],
+  },
+  realLeaf: {
+    position: 'absolute',
     width: 40,
-    height: 66,
-    borderRadius: 36,
-    backgroundColor: '#3B954E',
-    transform: [{ rotate: '32deg' }],
+    height: 70,
+    borderTopLeftRadius: 34,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 34,
+    borderWidth: 0.7,
+    borderColor: 'rgba(255,255,255,0.28)',
+    shadowColor: '#1C5E31',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+  },
+  realLeafSmall: {
+    position: 'absolute',
+    width: 32,
+    height: 56,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 28,
+    borderWidth: 0.7,
+    borderColor: 'rgba(255,255,255,0.24)',
+    shadowColor: '#1C5E31',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 7,
+  },
+  realLeafOne: {
+    bottom: 58,
+    left: 26,
+    transform: [{ rotate: '-43deg' }],
+  },
+  realLeafTwo: {
+    bottom: 72,
+    left: 43,
+    transform: [{ rotate: '-10deg' }],
+  },
+  realLeafThree: {
+    bottom: 58,
+    right: 24,
+    transform: [{ rotate: '38deg' }, { scaleX: -1 }],
+  },
+  realLeafFour: {
+    bottom: 92,
+    left: 33,
+    transform: [{ rotate: '-28deg' }, { scale: 0.9 }],
+  },
+  realLeafFive: {
+    bottom: 88,
+    right: 33,
+    transform: [{ rotate: '26deg' }, { scaleX: -1 }, { scale: 0.9 }],
   },
   previewPot: {
     width: 72,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    height: 52,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
     borderWidth: 1,
-    borderColor: '#E4E6EC',
+    borderColor: '#DEE1E7',
+    shadowColor: '#0D0E12',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    overflow: 'hidden',
+  },
+  previewPotLip: {
+    height: 10,
+    borderRadius: 999,
+    marginHorizontal: 7,
+    marginTop: 6,
+    backgroundColor: 'rgba(210,214,222,0.65)',
+  },
+  previewPotShadow: {
+    position: 'absolute',
+    bottom: -12,
+    alignSelf: 'center',
+    width: 58,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: 'rgba(177,184,196,0.34)',
   },
   translationBubble: {
     position: 'absolute',
