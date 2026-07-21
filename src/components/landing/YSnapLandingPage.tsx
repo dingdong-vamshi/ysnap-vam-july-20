@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   ImageSourcePropType,
@@ -159,11 +159,13 @@ const faqs = [
 export function YSnapLandingPage() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const scrollRef = useRef<any>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [activeMode, setActiveMode] = useState(3);
   const [openFaq, setOpenFaq] = useState(0);
   const isMobile = width < 760;
+  const compactDecor = width < 980;
 
   useLandingMetadata();
 
@@ -180,15 +182,43 @@ export function YSnapLandingPage() {
 
   const goToApp = () => router.push('/app');
   const goToSignUp = () => router.push('/(auth)/sign-up');
-  const goToAnchor = (target: string) => {
+  const goToAnchor = useCallback((target: string) => {
     setMenuOpen(false);
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      document.getElementById(target)?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+    if (Platform.OS === 'web' && typeof document !== 'undefined' && typeof window !== 'undefined') {
+      const targetElement = document.getElementById(target);
+      if (!targetElement) return;
+
+      const behavior = prefersReducedMotion() ? 'auto' : 'smooth';
+      let scrollParent = targetElement.parentElement;
+
+      while (scrollParent && scrollParent !== document.body) {
+        const style = window.getComputedStyle(scrollParent);
+        const canScroll = /(auto|scroll)/.test(`${style.overflowY}${style.overflow}`);
+        if (canScroll && scrollParent.scrollHeight > scrollParent.clientHeight) {
+          const targetTop = targetElement.getBoundingClientRect().top
+            - scrollParent.getBoundingClientRect().top
+            + scrollParent.scrollTop
+            - 24;
+
+          const nextScrollTop = Math.max(0, targetTop);
+          scrollRef.current?.scrollTo({ y: nextScrollTop, animated: !prefersReducedMotion() });
+          scrollParent.scrollTo?.({ top: nextScrollTop, behavior });
+          scrollParent.scrollTop = nextScrollTop;
+          return;
+        }
+
+        scrollParent = scrollParent.parentElement;
+      }
+
+      targetElement.scrollIntoView({ behavior, block: 'start' });
     }
-  };
+  }, []);
 
   return (
     <View style={styles.page}>
+      <View pointerEvents="none" style={[styles.backgroundAuraTop, compactDecor && styles.backgroundAuraTopMobile]} />
+      <View pointerEvents="none" style={[styles.backgroundGrid, compactDecor && styles.backgroundGridMobile]} />
+      <View pointerEvents="none" style={[styles.backgroundAuraBottom, compactDecor && styles.backgroundAuraBottomMobile]} />
       <StatusBar style="dark" />
       <LandingHeader
         scrolled={scrolled}
@@ -200,6 +230,7 @@ export function YSnapLandingPage() {
       />
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -284,14 +315,14 @@ function LandingHeader({
 }) {
   return (
     <View style={[styles.headerShell, scrolled && styles.headerShellScrolled]}>
-      <View style={styles.header}>
+      <View style={[styles.header, isMobile && styles.headerMobile]}>
         <Pressable
           style={styles.brandButton}
           accessibilityRole="link"
           accessibilityLabel="YSnap home"
           onPress={() => onAnchor('top')}
         >
-          <LandingBrandLockup size={42} />
+          <LandingBrandLockup size={isMobile ? 34 : 42} />
         </Pressable>
 
         {isMobile ? (
@@ -339,29 +370,46 @@ function HeroSection({ onPrimary, onSecondary }: { onPrimary: () => void; onSeco
   const { width } = useWindowDimensions();
   const stacked = width < 980;
   const mobile = width < 760;
+  const phone = width < 520;
 
   return (
-    <View nativeID="top" style={[styles.section, styles.heroSection, stacked && styles.heroSectionStacked, mobile && styles.sectionMobile]}>
+    <View nativeID="top" style={[styles.section, styles.heroSection, stacked && styles.heroSectionStacked, mobile && styles.sectionMobile, phone && styles.heroSectionPhone]}>
       <View style={styles.heroCopy}>
-        <View style={styles.trustPill}>
+        <View style={[styles.trustPill, phone && styles.trustPillPhone]}>
           <Ionicons name="sparkles-outline" size={16} color="#1877F2" />
           <Text style={styles.trustPillText}>Built for everyday understanding</Text>
         </View>
         <Text accessibilityRole="header" style={[styles.h1, stacked && styles.h1Tablet, mobile && styles.h1Mobile]}>
-          See it. Hear it. Understand it.
+          See it. Hear it. <Text style={styles.h1Accent}>Understand it.</Text>
         </Text>
         <Text style={[styles.heroSubtitle, mobile && styles.heroSubtitleMobile]}>
           Translate conversations, understand images, scan everyday objects, and get useful answers from one intelligent camera.
         </Text>
-        <View style={[styles.heroActions, mobile && styles.heroActionsMobile]}>
+        <View style={[styles.heroActions, mobile && styles.heroActionsMobile, phone && styles.heroActionsPhone]}>
           <PrimaryLandingButton label="Open YSnap" onPress={onPrimary} />
           <SecondaryLandingButton label="Explore features" onPress={onSecondary} icon="arrow-down-outline" />
         </View>
+        <View style={[styles.productProofRail, mobile && styles.productProofRailMobile, phone && styles.productProofRailPhone]}>
+          {[
+            ['Text', 'Translation with context'],
+            ['Voice', 'Speak, listen, replay'],
+            ['Camera', 'Scan-focused workflows'],
+          ].map(([label, detail], index, items) => (
+            <View key={label} style={[styles.productProofItem, mobile && styles.productProofItemMobile, phone && styles.productProofItemPhone, index === items.length - 1 && styles.productProofItemLast]}>
+              <Text style={styles.productProofLabel}>{label}</Text>
+              <Text style={styles.productProofDetail}>{detail}</Text>
+            </View>
+          ))}
+        </View>
       </View>
 
-      <View style={[styles.heroVisual, stacked && styles.heroVisualStacked, mobile && styles.heroVisualMobile]}>
-        <View style={styles.heroGlow} />
-        <PhoneFrame image={showcaseImages.voiceTranslation} label="YSnap voice translator screen showing English to Spanish voice translation" priority />
+      <View style={[styles.heroVisual, stacked && styles.heroVisualStacked, mobile && styles.heroVisualMobile, phone && styles.heroVisualPhone]}>
+        <View style={[styles.heroGlow, phone && styles.heroGlowPhone]} />
+        <View style={[styles.heroDeviceStage, phone && styles.heroDeviceStagePhone]}>
+          <View style={[styles.heroDeviceStageInner, phone && styles.heroDeviceStageInnerPhone]}>
+            <PhoneFrame image={showcaseImages.voiceTranslation} label="YSnap voice translator screen showing English to Spanish voice translation" priority hero />
+          </View>
+        </View>
         {!mobile ? <View style={styles.heroFloatingCard}>
           <Ionicons name="language-outline" size={22} color="#1877F2" />
           <Text style={styles.heroFloatingTitle}>Text translation</Text>
@@ -381,6 +429,7 @@ function ProductShowcase() {
   const { width } = useWindowDimensions();
   const stacked = width < 980;
   const mobile = width < 760;
+  const phone = width < 520;
 
   return (
     <View nativeID="features" style={[styles.section, mobile && styles.sectionMobile]}>
@@ -390,20 +439,22 @@ function ProductShowcase() {
         body="Approved in-app product screens show how YSnap handles text, voice translation, and speech personalization without overcrowding the experience."
       />
       <View style={[styles.showcaseGrid, stacked && styles.showcaseGridStacked]}>
-        <View style={[styles.showcasePrimary, mobile && styles.showcasePrimaryMobile]}>
-          <View style={styles.showcaseGlow} />
-          <View style={[styles.layeredScreens, mobile && styles.layeredScreensMobile]}>
+        <View style={[styles.showcasePrimary, mobile && styles.showcasePrimaryMobile, phone && styles.showcasePrimaryPhone]}>
+          <View pointerEvents="none" style={styles.showcaseNoise} />
+          <View style={[styles.showcaseGlow, phone && styles.showcaseGlowPhone]} />
+          <View style={[styles.layeredScreens, mobile && styles.layeredScreensMobile, phone && styles.layeredScreensPhone]}>
             <View style={[styles.layeredPhone, styles.layeredPhoneLeft, mobile && styles.layeredPhoneHidden]}>
               <PhoneFrame image={showcaseImages.textTranslation} label="YSnap text translation product screen" compact />
             </View>
             <View style={styles.layeredPhoneMain}>
-              <PhoneFrame image={showcaseImages.voiceTranslation} label="YSnap voice translator product screen" />
+              <PhoneFrame image={showcaseImages.voiceTranslation} label="YSnap voice translator product screen" compactMobile />
             </View>
             <View style={[styles.layeredPhone, styles.layeredPhoneRight, mobile && styles.layeredPhoneHidden]}>
               <PhoneFrame image={showcaseImages.voiceChanger} label="YSnap speech voice changer product screen" compact />
             </View>
           </View>
-          <View style={[styles.annotationCard, mobile && styles.annotationCardMobile]}>
+          <View style={[styles.annotationCard, mobile && styles.annotationCardMobile, phone && styles.annotationCardPhone]}>
+            <Text style={styles.annotationEyebrow}>Product proof</Text>
             <Text style={styles.annotationTitle}>Product screens, front and center</Text>
             <Text style={styles.annotationText}>Text translation, voice translation, and voice changer are shown using the approved mobile screenshots.</Text>
           </View>
@@ -434,23 +485,25 @@ function ProductStorySection() {
   const { width } = useWindowDimensions();
   const stacked = width < 980;
   const mobile = width < 760;
+  const phone = width < 520;
 
   return (
-    <View style={[styles.section, styles.productStorySection, mobile && styles.sectionMobile]}>
+    <View style={[styles.section, styles.productStorySection, mobile && styles.sectionMobile, phone && styles.productStorySectionPhone]}>
       {productScreens.map((screen, index) => {
         const reverse = index % 2 === 1 && !stacked;
         return (
-          <View key={screen.title} style={[styles.productStoryBlock, stacked && styles.productStoryBlockStacked, reverse && styles.productStoryBlockReverse]}>
+          <View key={screen.title} style={[styles.productStoryBlock, stacked && styles.productStoryBlockStacked, phone && styles.productStoryBlockPhone, reverse && styles.productStoryBlockReverse]}>
             <View style={styles.productStoryCopy}>
+              <Text style={styles.productStoryStep}>0{index + 1}</Text>
               <View style={styles.productStoryIcon}>
                 <Ionicons name={screen.icon} size={22} color="#1877F2" />
               </View>
               <Text accessibilityRole="header" style={[styles.productStoryTitle, mobile && styles.productStoryTitleMobile]}>{screen.title}</Text>
-              <Text style={styles.productStoryBody}>{screen.body}</Text>
+              <Text style={[styles.productStoryBody, phone && styles.productStoryBodyPhone]}>{screen.body}</Text>
             </View>
-            <View style={[styles.productStoryVisual, mobile && styles.productStoryVisualMobile]}>
-              <View style={styles.productStoryGlow} />
-              <PhoneFrame image={screen.image} label={screen.label} />
+            <View style={[styles.productStoryVisual, mobile && styles.productStoryVisualMobile, phone && styles.productStoryVisualPhone]}>
+              <View style={[styles.productStoryGlow, phone && styles.productStoryGlowPhone]} />
+              <PhoneFrame image={screen.image} label={screen.label} compactMobile />
             </View>
           </View>
         );
@@ -463,6 +516,7 @@ function UseCasesSection() {
   const { width } = useWindowDimensions();
   const stacked = width < 980;
   const mobile = width < 760;
+  const phone = width < 520;
 
   return (
     <View nativeID="use-cases" style={[styles.section, mobile && styles.sectionMobile]}>
@@ -473,7 +527,7 @@ function UseCasesSection() {
       />
       <View style={[styles.useCaseLayout, stacked && styles.useCaseLayoutStacked]}>
         {useCases.map((item, index) => (
-          <View key={item.title} style={[styles.useCaseCard, index === 1 && !stacked && styles.useCaseCardRaised]}>
+          <View key={item.title} style={[styles.useCaseCard, phone && styles.useCaseCardPhone, index === 1 && !stacked && styles.useCaseCardRaised]}>
             <View style={[styles.useCaseIcon, { backgroundColor: `${item.color}14` }]}>
               <Ionicons name={item.icon} size={24} color={item.color} />
             </View>
@@ -524,6 +578,7 @@ function HowItWorksSection() {
   const { width } = useWindowDimensions();
   const stacked = width < 980;
   const mobile = width < 760;
+  const phone = width < 520;
   const steps = [
     ['Capture or speak', 'Take a photo, upload an image, enter text, or record speech.'],
     ['YSnap understands', 'The app processes the content according to the selected feature.'],
@@ -539,7 +594,7 @@ function HowItWorksSection() {
       />
       <View style={[styles.stepsRail, stacked && styles.stepsRailStacked]}>
         {steps.map(([title, body], index) => (
-          <View key={title} style={styles.stepCard}>
+          <View key={title} style={[styles.stepCard, phone && styles.stepCardPhone]}>
             <View style={styles.stepNumber}>
               <Text style={styles.stepNumberText}>{index + 1}</Text>
             </View>
@@ -771,22 +826,26 @@ function PhoneFrame({
   label,
   priority = false,
   compact = false,
+  compactMobile = false,
+  hero = false,
 }: {
   image: ImageSourcePropType;
   label: string;
   priority?: boolean;
   compact?: boolean;
+  compactMobile?: boolean;
+  hero?: boolean;
 }) {
   const { width } = useWindowDimensions();
   const mobile = width < 760;
   const tiny = width < 360;
 
   return (
-    <View style={[styles.phoneFrame, compact && styles.phoneFrameCompact, mobile && styles.phoneFrameMobile, tiny && styles.phoneFrameTiny]}>
+    <View style={[styles.phoneFrame, compact && styles.phoneFrameCompact, mobile && styles.phoneFrameMobile, compactMobile && mobile && styles.phoneFrameMobileCompact, hero && mobile && styles.phoneFrameHeroMobile, tiny && styles.phoneFrameTiny]}>
       <Image
         source={image}
-        style={styles.phoneImage}
-        resizeMode="cover"
+        style={[styles.phoneImage, mobile && styles.phoneImageMobile]}
+        resizeMode={mobile ? 'contain' : 'cover'}
         accessibilityLabel={label}
         accessibilityIgnoresInvertColors
         {...(priority ? { loading: 'eager' as any } : { loading: 'lazy' as any })}
@@ -812,12 +871,13 @@ function FeatureStory({ icon, title, body }: { icon: keyof typeof Ionicons.glyph
 function PrimaryLandingButton({ label, onPress }: { label: string; onPress: () => void }) {
   const { width } = useWindowDimensions();
   const mobile = width < 760;
+  const phone = width < 520;
 
   return (
-    <Pressable style={({ pressed }) => [styles.primaryButton, mobile && styles.buttonMobileFull, pressed && styles.buttonPressed]} accessibilityRole="link" onPress={onPress}>
-      <LinearGradient colors={['#242329', '#111114', '#08080A']} style={styles.primaryButtonFace}>
+    <Pressable style={({ pressed }) => [styles.primaryButton, mobile && styles.buttonMobileFull, phone && styles.primaryButtonPhone, pressed && styles.buttonPressed]} accessibilityRole="link" onPress={onPress}>
+      <LinearGradient colors={['#242329', '#111114', '#08080A']} style={[styles.primaryButtonFace, phone && styles.primaryButtonFacePhone]}>
         <Text style={styles.primaryButtonText}>{label}</Text>
-        <View style={styles.primaryButtonIcon}>
+        <View style={[styles.primaryButtonIcon, phone && styles.primaryButtonIconPhone]}>
           <Ionicons name="arrow-forward" size={20} color={colors.textInverse} />
         </View>
       </LinearGradient>
@@ -838,9 +898,14 @@ function SecondaryLandingButton({
 }) {
   const { width } = useWindowDimensions();
   const mobile = width < 760;
+  const phone = width < 520;
 
   return (
-    <Pressable style={({ pressed }) => [styles.secondaryButton, mobile && !compact && styles.buttonMobileFull, compact && styles.secondaryButtonCompact, pressed && styles.buttonPressed]} accessibilityRole="link" onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [styles.secondaryButton, mobile && !compact && styles.buttonMobileFull, phone && !compact && styles.secondaryButtonPhone, compact && styles.secondaryButtonCompact, pressed && styles.buttonPressed]}
+      accessibilityRole="link"
+      onPress={onPress}
+    >
       <Ionicons name={icon} size={18} color={colors.textPrimary} />
       <Text style={styles.secondaryButtonText}>{label}</Text>
     </Pressable>
@@ -850,7 +915,54 @@ function SecondaryLandingButton({
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FBFBFD',
+  },
+  backgroundAuraTop: {
+    position: 'absolute',
+    top: -190,
+    right: 0,
+    width: 520,
+    height: 520,
+    borderRadius: 260,
+    backgroundColor: 'rgba(24,119,242,0.08)',
+  },
+  backgroundAuraTopMobile: {
+    right: 0,
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+  },
+  backgroundGrid: {
+    position: 'absolute',
+    top: 520,
+    left: 0,
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    borderWidth: 1,
+    borderColor: 'rgba(126,106,220,0.10)',
+    backgroundColor: 'rgba(126,106,220,0.035)',
+  },
+  backgroundGridMobile: {
+    left: 0,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+  },
+  backgroundAuraBottom: {
+    position: 'absolute',
+    bottom: 520,
+    left: 0,
+    width: 460,
+    height: 460,
+    borderRadius: 230,
+    backgroundColor: 'rgba(45,212,191,0.055)',
+  },
+  backgroundAuraBottomMobile: {
+    left: 0,
+    width: 116,
+    height: 116,
+    borderRadius: 58,
   },
   scroll: {
     flex: 1,
@@ -864,12 +976,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 20,
-    backgroundColor: 'rgba(255,255,255,0.78)',
+    backgroundColor: 'rgba(255,255,255,0.82)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(231,230,235,0)',
     ...Platform.select({
       web: {
-        backdropFilter: 'blur(18px)',
+        backdropFilter: 'blur(22px) saturate(1.15)',
         transition: 'border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease',
       } as any,
     }),
@@ -877,9 +989,9 @@ const styles = StyleSheet.create({
   headerShellScrolled: {
     borderBottomColor: 'rgba(231,230,235,0.92)',
     shadowColor: '#090909',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.07,
+    shadowRadius: 28,
   },
   header: {
     width: '100%',
@@ -890,6 +1002,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  headerMobile: {
+    minHeight: 68,
   },
   brandButton: {
     minHeight: 48,
@@ -913,7 +1028,7 @@ const styles = StyleSheet.create({
   },
   navLink: {
     minHeight: 44,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     borderRadius: 22,
     justifyContent: 'center',
     ...Platform.select({ web: { cursor: 'pointer' } as any }),
@@ -927,9 +1042,13 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 18,
     borderRadius: 22,
-    backgroundColor: colors.primary,
+    backgroundColor: '#111114',
     justifyContent: 'center',
     marginLeft: 8,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.14,
+    shadowRadius: 20,
     ...Platform.select({ web: { cursor: 'pointer' } as any }),
   },
   navCtaText: {
@@ -938,26 +1057,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   menuButton: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     borderRadius: 24,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.sm,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
     ...Platform.select({ web: { cursor: 'pointer' } as any }),
   },
   mobileMenu: {
     marginHorizontal: 18,
     marginBottom: 14,
-    borderRadius: 24,
+    borderRadius: 22,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: colors.border,
     padding: 10,
-    ...shadows.lg,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.08,
+    shadowRadius: 34,
   },
   mobileNavLink: {
     minHeight: 48,
@@ -990,17 +1115,17 @@ const styles = StyleSheet.create({
     maxWidth: 1180,
     alignSelf: 'center',
     paddingHorizontal: 22,
-    paddingVertical: 72,
+    paddingVertical: 86,
   },
   sectionMobile: {
     paddingHorizontal: 18,
-    paddingVertical: 54,
+    paddingVertical: 48,
   },
   heroSection: {
-    minHeight: 720,
+    minHeight: 760,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 56,
+    gap: 72,
     paddingTop: 42,
   },
   heroSectionStacked: {
@@ -1009,22 +1134,35 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     gap: 32,
   },
+  heroSectionPhone: {
+    paddingTop: 14,
+    gap: 18,
+  },
   heroCopy: {
     flex: 1,
     minWidth: 0,
   },
   trustPill: {
     alignSelf: 'flex-start',
-    minHeight: 38,
-    borderRadius: 19,
-    backgroundColor: '#F4F7FF',
+    minHeight: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5EEFF',
-    paddingHorizontal: 14,
+    borderColor: 'rgba(24,119,242,0.13)',
+    paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 22,
+    marginBottom: 24,
+    shadowColor: '#1877F2',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+  },
+  trustPillPhone: {
+    minHeight: 34,
+    paddingHorizontal: 12,
+    marginBottom: 20,
   },
   trustPillText: {
     fontSize: 13,
@@ -1032,25 +1170,31 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   h1: {
-    fontSize: 76,
-    lineHeight: 78,
+    fontSize: 82,
+    lineHeight: 84,
     fontWeight: '900',
-    letterSpacing: -3.6,
+    letterSpacing: -4.2,
     color: colors.textPrimary,
     maxWidth: 720,
   },
+  h1Accent: {
+    color: '#1877F2',
+    textShadowColor: 'rgba(24,119,242,0.16)',
+    textShadowOffset: { width: 0, height: 10 },
+    textShadowRadius: 26,
+  },
   h1Tablet: {
-    fontSize: 58,
-    lineHeight: 62,
+    fontSize: 62,
+    lineHeight: 66,
     letterSpacing: -2.6,
   },
   h1Mobile: {
-    fontSize: 44,
-    lineHeight: 48,
-    letterSpacing: -1.8,
+    fontSize: 39,
+    lineHeight: 42,
+    letterSpacing: -1.45,
   },
   heroSubtitle: {
-    marginTop: 24,
+    marginTop: 26,
     fontSize: 21,
     lineHeight: 33,
     fontWeight: '500',
@@ -1058,11 +1202,12 @@ const styles = StyleSheet.create({
     maxWidth: 620,
   },
   heroSubtitleMobile: {
-    fontSize: 17,
-    lineHeight: 27,
+    fontSize: 16,
+    lineHeight: 25,
+    maxWidth: 350,
   },
   heroActions: {
-    marginTop: 34,
+    marginTop: 36,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
@@ -1070,6 +1215,72 @@ const styles = StyleSheet.create({
   },
   heroActionsMobile: {
     alignItems: 'stretch',
+  },
+  heroActionsPhone: {
+    marginTop: 28,
+    gap: 10,
+  },
+  productProofRail: {
+    marginTop: 34,
+    maxWidth: 690,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(226,225,232,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+    flexDirection: 'row',
+    overflow: 'hidden',
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.06,
+    shadowRadius: 36,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(16px)',
+      } as any,
+    }),
+  },
+  productProofRailMobile: {
+    flexDirection: 'column',
+  },
+  productProofRailPhone: {
+    marginTop: 22,
+    borderRadius: 22,
+    flexDirection: 'column',
+  },
+  productProofItem: {
+    flex: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderRightWidth: 1,
+    borderRightColor: 'rgba(226,225,232,0.7)',
+  },
+  productProofItemLast: {
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+  },
+  productProofItemMobile: {
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(226,225,232,0.7)',
+  },
+  productProofItemPhone: {
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(226,225,232,0.7)',
+  },
+  productProofLabel: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: colors.textPrimary,
+  },
+  productProofDetail: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '650' as any,
+    color: colors.textSecondary,
   },
   heroVisual: {
     flex: 0.86,
@@ -1082,14 +1293,55 @@ const styles = StyleSheet.create({
     minHeight: 620,
   },
   heroVisualMobile: {
-    minHeight: 560,
+    minHeight: 0,
+    paddingTop: 8,
+    paddingBottom: 18,
+  },
+  heroVisualPhone: {
+    minHeight: 0,
+    marginTop: 0,
   },
   heroGlow: {
     position: 'absolute',
-    width: 440,
-    height: 440,
-    borderRadius: 220,
-    backgroundColor: 'rgba(24,119,242,0.075)',
+    width: 540,
+    height: 540,
+    borderRadius: 270,
+    backgroundColor: 'rgba(24,119,242,0.09)',
+  },
+  heroGlowPhone: {
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+  },
+  heroDeviceStage: {
+    borderRadius: 64,
+    padding: 20,
+    backgroundColor: 'rgba(255,255,255,0.52)',
+    borderWidth: 1,
+    borderColor: 'rgba(226,225,232,0.88)',
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 34 },
+    shadowOpacity: 0.11,
+    shadowRadius: 58,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(18px)',
+      } as any,
+    }),
+  },
+  heroDeviceStagePhone: {
+    padding: 10,
+    borderRadius: 40,
+    transform: [],
+  },
+  heroDeviceStageInner: {
+    borderRadius: 52,
+    padding: 14,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+  },
+  heroDeviceStageInnerPhone: {
+    padding: 6,
+    borderRadius: 34,
   },
   heroFloatingCard: {
     position: 'absolute',
@@ -1098,10 +1350,18 @@ const styles = StyleSheet.create({
     width: 184,
     borderRadius: 24,
     padding: 16,
-    backgroundColor: 'rgba(255,255,255,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadows.lg,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.10,
+    shadowRadius: 42,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(14px)',
+      } as any,
+    }),
   },
   heroFloatingCardRight: {
     left: undefined,
@@ -1126,14 +1386,14 @@ const styles = StyleSheet.create({
     width: 292,
     height: 630,
     borderRadius: 42,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 10,
-    borderColor: '#111114',
+    backgroundColor: '#0F1014',
+    borderWidth: 9,
+    borderColor: '#101116',
     overflow: 'hidden',
     shadowColor: '#08080A',
-    shadowOffset: { width: 0, height: 28 },
-    shadowOpacity: 0.16,
-    shadowRadius: 42,
+    shadowOffset: { width: 0, height: 34 },
+    shadowOpacity: 0.22,
+    shadowRadius: 54,
     elevation: 8,
   },
   phoneFrameCompact: {
@@ -1145,22 +1405,40 @@ const styles = StyleSheet.create({
     shadowRadius: 32,
   },
   phoneFrameMobile: {
-    width: 250,
-    height: 540,
-    borderRadius: 36,
-    borderWidth: 8,
+    width: '78%',
+    maxWidth: 250,
+    aspectRatio: 853 / 1844,
+    borderRadius: 32,
+    borderWidth: 7,
+  },
+  phoneFrameHeroMobile: {
+    width: '72%',
+    maxWidth: 230,
+  },
+  phoneFrameMobileCompact: {
+    width: '72%',
+    maxWidth: 220,
+    aspectRatio: 853 / 1844,
+    borderRadius: 30,
+    borderWidth: 6,
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.13,
+    shadowRadius: 34,
   },
   phoneFrameTiny: {
-    width: 224,
-    height: 484,
+    width: '70%',
+    maxWidth: 204,
   },
   phoneImage: {
     width: '100%',
     height: '100%',
   },
+  phoneImageMobile: {
+    height: '100%',
+  },
   sectionIntro: {
     maxWidth: 760,
-    marginBottom: 34,
+    marginBottom: 42,
   },
   eyebrow: {
     color: '#1877F2',
@@ -1172,19 +1450,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 46,
-    lineHeight: 52,
+    fontSize: 50,
+    lineHeight: 56,
     fontWeight: '900',
-    letterSpacing: -1.7,
+    letterSpacing: -2,
     color: colors.textPrimary,
   },
   sectionTitleMobile: {
-    fontSize: 34,
-    lineHeight: 39,
-    letterSpacing: -1.2,
+    fontSize: 28,
+    lineHeight: 33,
+    letterSpacing: -0.8,
   },
   sectionBody: {
-    marginTop: 14,
+    marginTop: 16,
     fontSize: 18,
     lineHeight: 29,
     fontWeight: '500',
@@ -1192,12 +1470,13 @@ const styles = StyleSheet.create({
     maxWidth: 680,
   },
   sectionBodyMobile: {
-    fontSize: 16,
-    lineHeight: 25,
+    fontSize: 15,
+    lineHeight: 23,
+    maxWidth: 350,
   },
   showcaseGrid: {
     flexDirection: 'row',
-    gap: 28,
+    gap: 32,
     alignItems: 'center',
   },
   showcaseGridStacked: {
@@ -1206,26 +1485,52 @@ const styles = StyleSheet.create({
   },
   showcasePrimary: {
     flex: 0.95,
-    minHeight: 680,
+    minHeight: 720,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 40,
-    backgroundColor: colors.backgroundSoft,
+    borderRadius: 46,
+    backgroundColor: '#111114',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.10)',
     overflow: 'hidden',
-    ...shadows.md,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 34 },
+    shadowOpacity: 0.18,
+    shadowRadius: 64,
   },
   showcasePrimaryMobile: {
-    minHeight: 620,
+    minHeight: 0,
     borderRadius: 30,
+    paddingTop: 24,
+    paddingBottom: 18,
+    overflow: 'visible',
+  },
+  showcasePrimaryPhone: {
+    minHeight: 0,
+    borderRadius: 28,
   },
   showcaseGlow: {
     position: 'absolute',
-    width: 520,
-    height: 520,
+    width: 620,
+    height: 620,
     borderRadius: 260,
-    backgroundColor: 'rgba(24,119,242,0.08)',
+    backgroundColor: 'rgba(24,119,242,0.22)',
+  },
+  showcaseGlowPhone: {
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+  },
+  showcaseNoise: {
+    position: 'absolute',
+    top: 18,
+    left: 18,
+    right: 18,
+    bottom: 18,
+    borderRadius: 38,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
   },
   layeredScreens: {
     width: '100%',
@@ -1234,7 +1539,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   layeredScreensMobile: {
-    minHeight: 560,
+    minHeight: 0,
+    paddingVertical: 8,
+  },
+  layeredScreensPhone: {
+    minHeight: 0,
   },
   layeredPhone: {
     position: 'absolute',
@@ -1260,19 +1569,42 @@ const styles = StyleSheet.create({
     bottom: 24,
     width: 230,
     borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.72)',
     padding: 16,
-    ...shadows.md,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.12,
+    shadowRadius: 36,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(18px)',
+      } as any,
+    }),
+  },
+  annotationEyebrow: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    color: '#1877F2',
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   annotationCardMobile: {
     position: 'relative',
     right: undefined,
     bottom: undefined,
     width: 'auto',
-    marginHorizontal: 18,
-    marginBottom: 18,
+    alignSelf: 'stretch',
+    marginHorizontal: 14,
+    marginTop: 10,
+    marginBottom: 14,
+  },
+  annotationCardPhone: {
+    padding: 14,
+    borderRadius: 20,
   },
   annotationTitle: {
     fontSize: 15,
@@ -1288,17 +1620,20 @@ const styles = StyleSheet.create({
   },
   showcaseStack: {
     flex: 1,
-    gap: 16,
+    gap: 18,
   },
   featureStory: {
-    borderRadius: 28,
+    borderRadius: 30,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(226,225,232,0.86)',
     backgroundColor: '#FFFFFF',
-    padding: 20,
+    padding: 22,
     flexDirection: 'row',
     gap: 16,
-    ...shadows.md,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.06,
+    shadowRadius: 34,
   },
   featureStoryIcon: {
     width: 48,
@@ -1325,19 +1660,25 @@ const styles = StyleSheet.create({
   },
   productStorySection: {
     paddingTop: 28,
-    gap: 44,
+    gap: 52,
+  },
+  productStorySectionPhone: {
+    paddingTop: 18,
+    gap: 26,
   },
   productStoryBlock: {
-    borderRadius: 40,
+    borderRadius: 44,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#FFFFFF',
-    padding: 28,
+    borderColor: 'rgba(226,225,232,0.88)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    padding: 34,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 34,
-    overflow: 'hidden',
-    ...shadows.md,
+    gap: 44,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 26 },
+    shadowOpacity: 0.08,
+    shadowRadius: 48,
   },
   productStoryBlockReverse: {
     flexDirection: 'row-reverse',
@@ -1346,9 +1687,22 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'stretch',
   },
+  productStoryBlockPhone: {
+    borderRadius: 28,
+    padding: 18,
+    gap: 16,
+  },
   productStoryCopy: {
     flex: 1,
     minWidth: 0,
+  },
+  productStoryStep: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
+    color: colors.textMuted,
+    letterSpacing: 1.5,
+    marginBottom: 18,
   },
   productStoryIcon: {
     width: 54,
@@ -1359,7 +1713,11 @@ const styles = StyleSheet.create({
     borderColor: '#E5EEFF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 22,
+    shadowColor: '#1877F2',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
   },
   productStoryTitle: {
     fontSize: 40,
@@ -1369,9 +1727,9 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   productStoryTitleMobile: {
-    fontSize: 30,
-    lineHeight: 36,
-    letterSpacing: -0.9,
+    fontSize: 26,
+    lineHeight: 31,
+    letterSpacing: -0.7,
   },
   productStoryBody: {
     marginTop: 14,
@@ -1381,21 +1739,37 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     maxWidth: 520,
   },
+  productStoryBodyPhone: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 22,
+    maxWidth: 320,
+  },
   productStoryVisual: {
     flex: 0.85,
-    minHeight: 610,
+    minHeight: 640,
     alignItems: 'center',
     justifyContent: 'center',
   },
   productStoryVisualMobile: {
-    minHeight: 560,
+    minHeight: 0,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  productStoryVisualPhone: {
+    minHeight: 0,
   },
   productStoryGlow: {
     position: 'absolute',
     width: 360,
     height: 360,
     borderRadius: 180,
-    backgroundColor: 'rgba(126,106,220,0.08)',
+    backgroundColor: 'rgba(126,106,220,0.10)',
+  },
+  productStoryGlowPhone: {
+    width: 260,
+    height: 260,
+    borderRadius: 130,
   },
   useCaseLayout: {
     flexDirection: 'row',
@@ -1407,13 +1781,21 @@ const styles = StyleSheet.create({
   },
   useCaseCard: {
     flex: 1,
-    borderRadius: 32,
+    borderRadius: 34,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#FFFFFF',
-    padding: 24,
-    minHeight: 300,
-    ...shadows.md,
+    borderColor: 'rgba(226,225,232,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    padding: 26,
+    minHeight: 316,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 22 },
+    shadowOpacity: 0.07,
+    shadowRadius: 42,
+  },
+  useCaseCardPhone: {
+    minHeight: 0,
+    borderRadius: 26,
+    padding: 20,
   },
   useCaseCardRaised: {
     marginTop: 34,
@@ -1457,11 +1839,15 @@ const styles = StyleSheet.create({
   capabilityCard: {
     width: '48.9%',
     minWidth: 280,
-    borderRadius: 28,
-    backgroundColor: colors.backgroundSoft,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.82)',
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 22,
+    borderColor: 'rgba(226,225,232,0.9)',
+    padding: 24,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.04,
+    shadowRadius: 28,
   },
   capabilityCardMobile: {
     width: '100%',
@@ -1509,12 +1895,19 @@ const styles = StyleSheet.create({
   },
   stepCard: {
     flex: 1,
-    borderRadius: 30,
+    borderRadius: 32,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 24,
-    ...shadows.md,
+    borderColor: 'rgba(226,225,232,0.9)',
+    padding: 26,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.06,
+    shadowRadius: 36,
+  },
+  stepCardPhone: {
+    borderRadius: 26,
+    padding: 20,
   },
   stepNumber: {
     width: 40,
@@ -1547,12 +1940,15 @@ const styles = StyleSheet.create({
     paddingTop: 44,
   },
   cameraModePanel: {
-    borderRadius: 40,
+    borderRadius: 44,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#FFFFFF',
-    padding: 24,
-    ...shadows.lg,
+    borderColor: 'rgba(226,225,232,0.92)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    padding: 26,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 28 },
+    shadowOpacity: 0.09,
+    shadowRadius: 54,
   },
   modeChips: {
     flexDirection: 'row',
@@ -1567,7 +1963,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: colors.backgroundSoft,
+    backgroundColor: '#F7F8FC',
     borderWidth: 1,
     borderColor: colors.border,
     ...Platform.select({ web: { cursor: 'pointer' } as any }),
@@ -1586,10 +1982,10 @@ const styles = StyleSheet.create({
   },
   modePreview: {
     minHeight: 200,
-    borderRadius: 32,
-    backgroundColor: colors.backgroundSoft,
+    borderRadius: 34,
+    backgroundColor: '#F7F8FC',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(226,225,232,0.88)',
     padding: 26,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1606,7 +2002,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.md,
+    shadowColor: '#1877F2',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.09,
+    shadowRadius: 28,
   },
   modePreviewCopy: {
     flex: 1,
@@ -1647,13 +2046,16 @@ const styles = StyleSheet.create({
   },
   guideCard: {
     maxWidth: 780,
-    borderRadius: 34,
+    borderRadius: 36,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: 24,
+    borderColor: 'rgba(226,225,232,0.9)',
+    padding: 26,
     gap: 14,
-    ...shadows.md,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.06,
+    shadowRadius: 38,
   },
   guideItem: {
     flexDirection: 'row',
@@ -1685,12 +2087,18 @@ const styles = StyleSheet.create({
     paddingVertical: 36,
   },
   trustCard: {
-    borderRadius: 36,
-    backgroundColor: colors.primary,
-    padding: 28,
+    borderRadius: 42,
+    backgroundColor: '#111114',
+    padding: 32,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 22,
+    borderWidth: 1,
+    borderColor: '#28282E',
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 28 },
+    shadowOpacity: 0.18,
+    shadowRadius: 52,
   },
   trustCardMobile: {
     flexDirection: 'column',
@@ -1725,10 +2133,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   faqItem: {
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(226,225,232,0.9)',
     overflow: 'hidden',
   },
   faqQuestion: {
@@ -1768,13 +2176,16 @@ const styles = StyleSheet.create({
     paddingVertical: 54,
   },
   finalCtaCard: {
-    borderRadius: 44,
+    borderRadius: 48,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.backgroundSoft,
-    padding: 34,
+    borderColor: 'rgba(226,225,232,0.9)',
+    backgroundColor: '#FFFFFF',
+    padding: 40,
     alignItems: 'center',
-    ...shadows.lg,
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 30 },
+    shadowOpacity: 0.10,
+    shadowRadius: 60,
   },
   finalCtaTitle: {
     marginTop: 18,
@@ -1816,8 +2227,8 @@ const styles = StyleSheet.create({
     maxWidth: 1180,
     alignSelf: 'center',
     paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 42,
+    paddingTop: 34,
+    paddingBottom: 48,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     flexDirection: 'row',
@@ -1864,8 +2275,15 @@ const styles = StyleSheet.create({
     minWidth: 178,
     minHeight: 56,
     borderRadius: 28,
-    ...shadows.lg,
-    ...Platform.select({ web: { cursor: 'pointer', transition: 'transform 120ms ease' } as any }),
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 18 },
+    shadowOpacity: 0.16,
+    shadowRadius: 34,
+    ...Platform.select({ web: { cursor: 'pointer', transition: 'transform 160ms ease, filter 160ms ease' } as any }),
+  },
+  primaryButtonPhone: {
+    minHeight: 50,
+    borderRadius: 25,
   },
   buttonMobileFull: {
     width: '100%',
@@ -1880,7 +2298,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
     borderWidth: 1,
-    borderColor: '#34343A',
+    borderColor: '#383840',
+  },
+  primaryButtonFacePhone: {
+    minHeight: 50,
+    borderRadius: 25,
+    paddingLeft: 18,
+    paddingRight: 7,
   },
   primaryButtonText: {
     color: colors.textInverse,
@@ -1895,19 +2319,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primaryButtonIconPhone: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
   secondaryButton: {
     minHeight: 56,
     borderRadius: 28,
     paddingHorizontal: 18,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(226,225,232,0.95)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 9,
-    ...shadows.sm,
-    ...Platform.select({ web: { cursor: 'pointer', transition: 'transform 120ms ease' } as any }),
+    shadowColor: '#08080A',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.05,
+    shadowRadius: 24,
+    ...Platform.select({ web: { cursor: 'pointer', transition: 'transform 160ms ease, border-color 160ms ease' } as any }),
+  },
+  secondaryButtonPhone: {
+    minHeight: 50,
+    borderRadius: 25,
   },
   secondaryButtonCompact: {
     alignSelf: 'flex-start',
