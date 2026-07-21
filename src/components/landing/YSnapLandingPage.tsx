@@ -1,9 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
   Image,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -64,14 +61,6 @@ const featureScenes: FeatureScene[] = [
   },
 ];
 
-function clamp(value: number, min = 0, max = 1) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function mix(start: number, end: number, progress: number) {
-  return start + (end - start) * clamp(progress);
-}
-
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
 
@@ -119,22 +108,13 @@ export function YSnapLandingPage() {
   const router = useRouter();
   const scrollRef = useRef<ScrollView>(null);
   const { width, height } = useWindowDimensions();
-  const [scrollY, setScrollY] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const reducedMotion = useReducedMotion();
   const mobile = width < 760;
   const tablet = width >= 760 && width < 1080;
-  const heroHeight = mobile ? Math.max(900, height * 1.08) : Math.max(780, height * 0.94);
-  const storyStart = heroHeight * 0.72;
-  const storyProgress = clamp((scrollY - storyStart) / Math.max(1, heroHeight * 2.6));
-  const activeIndex = clamp(Math.floor(storyProgress * featureScenes.length), 0, featureScenes.length - 1);
-  const activeScene = featureScenes[activeIndex] ?? featureScenes[0];
+  const heroHeight = mobile ? Math.max(760, height * 0.96) : Math.max(760, height * 0.94);
 
   useLandingMetadata();
-
-  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setScrollY(event.nativeEvent.contentOffset.y);
-  };
 
   const openApp = () => router.push('/sign-in');
   const createAccount = () => router.push('/sign-up');
@@ -145,22 +125,6 @@ export function YSnapLandingPage() {
     }
     scrollRef.current?.scrollTo({ y: heroHeight, animated: !reducedMotion });
   };
-
-  const phoneTransform = useMemo(() => {
-    if (reducedMotion) {
-      return [{ translateY: 0 }, { translateX: 0 }, { scale: mobile ? 0.8 : tablet ? 0.9 : 0.98 }, { rotate: '0deg' }];
-    }
-
-    const heroProgress = clamp(scrollY / Math.max(1, heroHeight));
-    const travel = clamp((scrollY - heroHeight * 0.3) / Math.max(1, heroHeight * 2.6));
-
-    return [
-      { translateX: mobile ? 0 : mix(90, -18, travel) },
-      { translateY: mobile ? 0 : mix(8, -34, travel) },
-      { scale: mobile ? 0.8 : tablet ? mix(0.82, 0.9, heroProgress) : mix(0.9, 1.02, heroProgress) },
-      { rotate: `${mobile ? 0 : mix(-4.5, 4.5, travel)}deg` },
-    ];
-  }, [heroHeight, mobile, reducedMotion, scrollY, tablet]);
 
   return (
     <View style={styles.page}>
@@ -185,8 +149,6 @@ export function YSnapLandingPage() {
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: mobile ? 72 : 110 }]}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.hero, mobile && styles.heroMobile, { minHeight: heroHeight }]}>
@@ -207,14 +169,14 @@ export function YSnapLandingPage() {
             </View>
           </View>
 
-          <PhoneStage mobile={mobile} tablet={tablet} transform={phoneTransform} activeScene={mobile ? featureScenes[0] : activeScene} />
+          <PhoneStage mobile={mobile} tablet={tablet} />
         </View>
 
         <View nativeID="ysnap-product-story" style={[styles.storyIntro, mobile && styles.storyIntroMobile]}>
           <Text style={styles.kicker}>Product story</Text>
-          <Text style={[styles.sectionTitle, mobile && styles.sectionTitleMobile]}>A light, continuous YSnap product journey.</Text>
+          <Text style={[styles.sectionTitle, mobile && styles.sectionTitleMobile]}>A real mobile workspace for translation and voice.</Text>
           <Text style={[styles.sectionBody, mobile && styles.sectionBodyMobile]}>
-            The same clean device anchors the page while the surrounding interface explains each workflow. No mismatched phones, no watermarked renders, no abrupt visual resets.
+            Approved in-app product screens show how YSnap handles text, voice translation, camera understanding, and speech personalization without overcrowding the experience.
           </Text>
         </View>
 
@@ -224,7 +186,6 @@ export function YSnapLandingPage() {
           ))}
         </View>
 
-        <ProofPanel mobile={mobile} />
         <FinalCTA mobile={mobile} onPrimary={openApp} onSecondary={createAccount} />
       </ScrollView>
     </View>
@@ -303,32 +264,18 @@ function MobileMenu({
 function PhoneStage({
   mobile,
   tablet,
-  transform,
-  activeScene,
 }: {
   mobile: boolean;
   tablet: boolean;
-  transform: object[];
-  activeScene: FeatureScene;
 }) {
   return (
     <View style={[styles.phoneStage, mobile && styles.phoneStageMobile, tablet && styles.phoneStageTablet]} pointerEvents="none">
       <View style={[styles.phoneGlow, mobile && styles.phoneGlowMobile]} />
       <View style={[styles.orbitOuter, mobile && styles.orbitOuterMobile]} />
       <View style={[styles.orbitInner, mobile && styles.orbitInnerMobile]} />
-      <Animated.View style={[styles.phoneWrap, mobile && styles.phoneWrapMobile, tablet && styles.phoneWrapTablet, { transform: transform as any }]}>
+      <View style={[styles.phoneWrap, mobile && styles.phoneWrapMobile, tablet && styles.phoneWrapTablet]}>
         <Image source={canonicalPhone} resizeMode="contain" style={[styles.phoneImage, mobile && styles.phoneImageMobile, tablet && styles.phoneImageTablet]} />
-        <View style={[styles.modeBadge, mobile && styles.modeBadgeMobile]}>
-          <View style={[styles.modeIcon, { backgroundColor: `${activeScene.accent}14` }]}>
-            <Ionicons name={activeScene.icon} size={mobile ? 15 : 18} color={activeScene.accent} />
-          </View>
-          <View>
-            <Text style={styles.modeEyebrow}>Now showing</Text>
-            <Text style={styles.modeTitle}>{activeScene.eyebrow}</Text>
-          </View>
-        </View>
-        <View style={[styles.scanGlow, { opacity: activeScene.icon === 'scan-outline' ? 0.9 : 0 }]} />
-      </Animated.View>
+      </View>
     </View>
   );
 }
@@ -359,33 +306,6 @@ function FeatureSceneCard({
             <Text key={chip} style={[styles.chip, { color: scene.accent, backgroundColor: `${scene.accent}0F` }]}>{chip}</Text>
           ))}
         </View>
-      </View>
-    </View>
-  );
-}
-
-function ProofPanel({ mobile }: { mobile: boolean }) {
-  return (
-    <View style={[styles.proof, mobile && styles.proofMobile]}>
-      <View style={[styles.proofCard, mobile && styles.proofCardMobile]}>
-        <Text style={styles.kicker}>Production-ready asset rules</Text>
-        <Text style={[styles.proofTitle, mobile && styles.proofTitleMobile]}>One clean phone. One white system. No visual noise.</Text>
-        <Text style={[styles.proofBody, mobile && styles.proofBodyMobile]}>
-          The rebuilt page rejects watermarked mockups and keeps the transparent YSnap phone as the single visual anchor. Feature states are expressed through clean overlays until matching transparent screenshots are available.
-        </Text>
-      </View>
-      <View style={[styles.proofGrid, mobile && styles.proofGridMobile]}>
-        {[
-          ['No watermark', 'Only transparent production assets are used.'],
-          ['No dark reset', 'The page stays in YSnap’s white, black, and soft gray identity.'],
-          ['Mobile-safe', 'The phone remains contained and readable across small widths.'],
-        ].map(([title, body]) => (
-          <View key={title} style={styles.proofTile}>
-            <Ionicons name="checkmark-circle-outline" size={23} color="#1877F2" />
-            <Text style={styles.proofTileTitle}>{title}</Text>
-            <Text style={styles.proofTileBody}>{body}</Text>
-          </View>
-        ))}
       </View>
     </View>
   );
@@ -433,36 +353,36 @@ const styles = StyleSheet.create({
   scrollContent: { minHeight: '100%' },
   backgroundPlane: {
     position: 'absolute',
-    top: 180,
+    top: 220,
     left: 0,
     right: 0,
-    height: 780,
-    backgroundColor: 'rgba(245,248,253,0.72)',
-    transform: [{ skewY: '-7deg' }],
+    height: 620,
+    backgroundColor: 'rgba(248,250,253,0.78)',
+    transform: [{ skewY: '-4deg' }],
   },
   backgroundRing: {
     position: 'absolute',
-    top: -150,
-    right: -190,
-    width: 520,
-    height: 520,
-    borderRadius: 260,
+    top: -120,
+    right: 0,
+    width: 420,
+    height: 420,
+    borderRadius: 210,
     borderWidth: 1,
-    borderColor: 'rgba(24,119,242,0.12)',
-    backgroundColor: 'rgba(24,119,242,0.045)',
+    borderColor: 'rgba(24,119,242,0.08)',
+    backgroundColor: 'rgba(24,119,242,0.028)',
   },
-  backgroundRingMobile: { width: 270, height: 270, borderRadius: 135, top: 92, right: -142 },
+  backgroundRingMobile: { width: 180, height: 180, borderRadius: 90, top: 92, right: 0 },
   backgroundRingTwo: {
     position: 'absolute',
     bottom: 220,
-    left: -210,
-    width: 470,
-    height: 470,
-    borderRadius: 235,
+    left: 0,
+    width: 360,
+    height: 360,
+    borderRadius: 180,
     borderWidth: 1,
-    borderColor: 'rgba(125,101,216,0.10)',
+    borderColor: 'rgba(125,101,216,0.07)',
   },
-  backgroundRingTwoMobile: { width: 250, height: 250, borderRadius: 125, left: -150, bottom: 380 },
+  backgroundRingTwoMobile: { width: 180, height: 180, borderRadius: 90, left: 0, bottom: 340 },
   dotField: {
     position: 'absolute',
     top: 540,
@@ -474,7 +394,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(24,119,242,0.08)',
   },
-  dotFieldMobile: { width: 110, height: 110, top: 470, left: '70%' },
+  dotFieldMobile: { width: 92, height: 92, top: 470, left: '62%' },
 
   header: {
     position: 'absolute',
@@ -591,79 +511,45 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   phoneStageTablet: { minHeight: 470 },
-  phoneStageMobile: { flex: 0, minHeight: 270, height: 270, width: '100%', marginTop: 360, overflow: 'hidden' },
+  phoneStageMobile: { flex: 0, minHeight: 620, height: 620, width: '100%', marginTop: 18, overflow: 'hidden' },
   phoneGlow: {
     position: 'absolute',
     width: 520,
     height: 370,
     borderRadius: 260,
-    backgroundColor: 'rgba(24,119,242,0.08)',
+    backgroundColor: 'rgba(24,119,242,0.055)',
     shadowColor: '#8BBFFF',
-    shadowOpacity: 0.32,
+    shadowOpacity: 0.18,
     shadowRadius: 70,
     shadowOffset: { width: 0, height: 16 },
   },
-  phoneGlowMobile: { width: 330, height: 220, borderRadius: 165 },
+  phoneGlowMobile: { width: 292, height: 196, borderRadius: 146 },
   orbitOuter: {
     position: 'absolute',
     width: 520,
     height: 360,
     borderRadius: 260,
     borderWidth: 1,
-    borderColor: 'rgba(24,119,242,0.12)',
+    borderColor: 'rgba(24,119,242,0.08)',
     transform: [{ rotate: '-8deg' }],
   },
-  orbitOuterMobile: { width: 300, height: 210, borderRadius: 150 },
+  orbitOuterMobile: { width: 282, height: 198, borderRadius: 141 },
   orbitInner: {
     position: 'absolute',
     width: 360,
     height: 250,
     borderRadius: 180,
     borderWidth: 1,
-    borderColor: 'rgba(125,101,216,0.11)',
+    borderColor: 'rgba(125,101,216,0.08)',
     transform: [{ rotate: '9deg' }],
   },
   orbitInnerMobile: { width: 220, height: 155, borderRadius: 110 },
   phoneWrap: { alignItems: 'center', justifyContent: 'center' },
   phoneWrapTablet: {},
-  phoneWrapMobile: {},
+  phoneWrapMobile: { transform: [{ translateY: 280 }] },
   phoneImage: { width: 640, height: 480 },
   phoneImageTablet: { width: 520, height: 390 },
   phoneImageMobile: { width: 292, height: 219 },
-  modeBadge: {
-    position: 'absolute',
-    right: 16,
-    bottom: 56,
-    maxWidth: 230,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    borderWidth: 1,
-    borderColor: 'rgba(16,24,40,0.08)',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    shadowColor: '#0B1220',
-    shadowOpacity: 0.10,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 14 },
-  },
-  modeBadgeMobile: { right: 16, bottom: 28, maxWidth: 175, paddingVertical: 9, paddingHorizontal: 10, borderRadius: 18 },
-  modeIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  modeEyebrow: { color: '#7A808C', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.2 },
-  modeTitle: { color: '#101217', fontSize: 13, fontWeight: '900', marginTop: 2 },
-  scanGlow: {
-    position: 'absolute',
-    width: 300,
-    height: 2,
-    borderRadius: 2,
-    backgroundColor: '#3DA0FF',
-    shadowColor: '#3DA0FF',
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-  },
-
   storyIntro: { zIndex: 12, paddingHorizontal: 56, paddingTop: 74, paddingBottom: 34, maxWidth: 980 },
   storyIntroMobile: { paddingHorizontal: 18, paddingTop: 38, paddingBottom: 18 },
   kicker: { color: '#1877F2', fontSize: 13, fontWeight: '950' as any, textTransform: 'uppercase', letterSpacing: 2.8, marginBottom: 14 },
@@ -698,37 +584,6 @@ const styles = StyleSheet.create({
   sceneBodyMobile: { fontSize: 16, lineHeight: 25 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 22 },
   chip: { overflow: 'hidden', paddingHorizontal: 13, paddingVertical: 8, borderRadius: 999, fontSize: 13, fontWeight: '900' },
-
-  proof: { zIndex: 12, paddingHorizontal: 56, paddingVertical: 90, gap: 28 },
-  proofMobile: { paddingHorizontal: 18, paddingVertical: 52, gap: 18 },
-  proofCard: {
-    padding: 34,
-    borderRadius: 38,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(16,24,40,0.08)',
-    shadowColor: '#0B1220',
-    shadowOpacity: 0.08,
-    shadowRadius: 38,
-    shadowOffset: { width: 0, height: 24 },
-  },
-  proofCardMobile: { padding: 24, borderRadius: 30 },
-  proofTitle: { maxWidth: 820, color: '#050507', fontSize: 52, lineHeight: 55, fontWeight: '950' as any, letterSpacing: -2.8 },
-  proofTitleMobile: { fontSize: 32, lineHeight: 35, letterSpacing: -1.5 },
-  proofBody: { marginTop: 16, maxWidth: 780, color: '#626873', fontSize: 19, lineHeight: 30, fontWeight: '650' as any },
-  proofBodyMobile: { fontSize: 16, lineHeight: 25 },
-  proofGrid: { flexDirection: 'row', gap: 16 },
-  proofGridMobile: { flexDirection: 'column' },
-  proofTile: {
-    flex: 1,
-    padding: 22,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.86)',
-    borderWidth: 1,
-    borderColor: 'rgba(16,24,40,0.08)',
-  },
-  proofTileTitle: { marginTop: 12, color: '#050507', fontSize: 18, fontWeight: '900' },
-  proofTileBody: { marginTop: 7, color: '#636A75', fontSize: 14, lineHeight: 21, fontWeight: '650' as any },
 
   final: { zIndex: 12, minHeight: 620, paddingHorizontal: 32, alignItems: 'center', justifyContent: 'center' },
   finalMobile: { minHeight: 520, paddingHorizontal: 18 },
