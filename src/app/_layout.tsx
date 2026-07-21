@@ -108,6 +108,9 @@ function RootLayoutContent() {
     }
 
     const inAuthGroup = segments[0] === '(auth)';
+    const isWeb = Platform.OS === 'web';
+    const isPublicWebLanding = isWeb && segments.length === 0;
+    const isAppEntryRoute = currentRoute === 'app';
 
     // 1. Demo Mode
     if (isDemo) {
@@ -137,6 +140,10 @@ function RootLayoutContent() {
 
     // 2. No Authenticated User
     if (!user) {
+      if (isPublicWebLanding || isAppEntryRoute) {
+        return;
+      }
+
       const allowedPreAuthRoutes = ['onboarding', 'sign-up', 'sign-in'];
       const currentSubRoute = segments[1];
       
@@ -165,7 +172,7 @@ function RootLayoutContent() {
         }
       } else {
         // Onboarding is complete! Go to tabs
-        if (inAuthGroup || segments.length === 0) {
+        if (inAuthGroup || isAppEntryRoute || (!isPublicWebLanding && segments.length === 0)) {
           router.replace('/(tabs)');
         }
       }
